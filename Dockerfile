@@ -1,16 +1,16 @@
 FROM php:8.2-apache
 
-# Enable PostgreSQL support
-RUN docker-php-ext-install pdo pdo_pgsql
+# Install system dependencies (IMPORTANT FIX)
+RUN apt-get update && apt-get install -y \
+    libpq-dev \
+    && docker-php-ext-install pdo pdo_pgsql
 
-# Copy project files into server
-COPY . /var/www/html/
-
-# Set working directory
-WORKDIR /var/www/html/
-
-# Enable Apache rewrite (optional but useful)
+# Enable Apache rewrite
 RUN a2enmod rewrite
 
-# Expose port
+# Copy project files
+COPY . /var/www/html/
+
+WORKDIR /var/www/html/
+
 EXPOSE 80
