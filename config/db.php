@@ -1,12 +1,12 @@
 <?php
 
-$host = getenv("DB_HOST"); "dpg-d7ocp6a8qa3s73ahfb4g-a.ohio-postgres.render.com";
-$dbname = getenv("DB_NAME"); "sk_system";
-$user = getenv("DB_USER"); "sk_admin" ;
-$pass = getenv("DB_PASSWORD"); "vnEwS9NI5pkc7khmhNCMfvbjbID5YAtm" ;
+$host = getenv("DB_HOST") ?: "dpg-d7ocp6a8qa3s73ahfb4g-a.ohio-postgres.render.com";
+$dbname = getenv("DB_NAME") ?: "sk_system";
+$user = getenv("DB_USER") ?: "sk_new";
+$pass = getenv("DB_PASSWORD") ?: "bX9G8vuFr3DTrHIASqTOsK9qCZ6A4lfZ";
 $port = getenv("DB_PORT") ?: "5432";
 
-/* Safety check (prevents silent crash) */
+/* Safety check */
 if (!$host || !$dbname || !$user || !$pass) {
     die("Missing database environment variables.");
 }
