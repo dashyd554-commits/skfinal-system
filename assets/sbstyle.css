@@ -1,0 +1,131 @@
+/* RESET */
+*{
+    margin:0;
+    padding:0;
+    box-sizing:border-box;
+    font-family:Arial;
+}
+
+/* SIDEBAR */
+.sidebar{
+    width:70px;
+    height:100vh;
+    position:fixed;
+    top:0;
+    left:0;
+    background:rgba(255,255,255,0.15);
+    backdrop-filter:blur(12px);
+    box-shadow:2px 0 10px rgba(0,0,0,0.15);
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    padding-top:20px;
+    transition:0.3s ease;
+    z-index:1000;
+}
+
+/* EXPAND */
+.sidebar:hover{
+    width:220px;
+    align-items:flex-start;
+    padding-left:10px;
+}
+
+/* TITLE */
+.sidebar h2{
+    width:100%;
+    color:white;
+    font-size:18px;
+    margin-bottom:25px;
+    text-align:center;
+    white-space:nowrap;
+}
+
+/* HIDE TITLE TEXT */
+.sidebar h2 span{
+    display:none;
+}
+
+/* SHOW TITLE TEXT ON HOVER */
+.sidebar:hover h2 span{
+    display:inline;
+}
+
+/* LINKS */
+.sidebar a{
+    width:100%;
+    padding:12px;
+    margin:4px 0;
+    color:white;
+    text-decoration:none;
+    display:flex;
+    align-items:center;
+    gap:12px;
+    justify-content:center;
+    border-radius:8px;
+    transition:0.3s;
+    white-space:nowrap;
+    overflow:hidden;
+    font-size:18px;
+}
+
+/* HIDE MENU TEXT */
+.sidebar a span{
+    display:none;
+}
+
+/* SHOW TEXT WHEN EXPANDED */
+.sidebar:hover a{
+    justify-content:flex-start;
+}
+
+.sidebar:hover a span{
+    display:inline;
+}
+
+/* HOVER EFFECT */
+.sidebar a:hover{
+    background:rgba(255,255,255,0.15);
+}
+
+/* LOGOUT */
+.logout{
+    margin-top:auto;
+    margin-bottom:20px;
+}
+
+/* MAIN CONTENT */
+.main{
+    margin-left:70px;
+    width:calc(100% - 70px);
+    padding:20px;
+    min-height:100vh;
+    transition:0.3s;
+}
+
+/* SHIFT CONTENT */
+.sidebar:hover ~ .main{
+    margin-left:220px;
+    width:calc(100% - 220px);
+}
+
+/* MOBILE */
+@media(max-width:768px){
+    .sidebar{
+        width:60px;
+    }
+
+    .sidebar:hover{
+        width:180px;
+    }
+
+    .main{
+        margin-left:60px;
+        width:calc(100% - 60px);
+    }
+
+    .sidebar:hover ~ .main{
+        margin-left:180px;
+        width:calc(100% - 180px);
+    }
+}
