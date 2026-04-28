@@ -3,17 +3,19 @@ import pandas as pd
 import json
 import pickle
 import numpy as np
+import os
 
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import LinearRegression
 
 # ---------------- DATABASE CONNECTION ----------------
+
 conn = psycopg2.connect(
-    host="localhost",
-    database="sksys_db",
-    user="postgres",
-    password="212121",
-    port=5432
+    host=os.getenv("DB_HOST", "dpg-d7ocp6a8qa3s73ahfb4g-a.ohio-postgres.render.com"),
+    database=os.getenv("DB_NAME", "sk_system"),
+    user=os.getenv("DB_USER", "sk_admin"),
+    password=os.getenv("DB_PASSWORD", "vnEwS9NI5pkc7khmhNCMfvbjbID5YAtm"),
+    port=os.getenv("DB_PORT", "5432")
 )
 
 # ---------------- QUERY ----------------

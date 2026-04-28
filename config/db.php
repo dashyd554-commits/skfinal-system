@@ -1,9 +1,15 @@
 <?php
-$host = "localhost";
-$dbname = "sksys_db";
-$user = "postgres";
-$pass = "212121";
-$port = "5432";
+
+$host = getenv("DB_HOST"); "dpg-d7ocp6a8qa3s73ahfb4g-a.ohio-postgres.render.com";
+$dbname = getenv("DB_NAME"); "sk_system";
+$user = getenv("DB_USER"); "sk_admin" ;
+$pass = getenv("DB_PASSWORD"); "vnEwS9NI5pkc7khmhNCMfvbjbID5YAtm" ;
+$port = getenv("DB_PORT") ?: "5432";
+
+/* Safety check (prevents silent crash) */
+if (!$host || !$dbname || !$user || !$pass) {
+    die("Missing database environment variables.");
+}
 
 try {
     $conn = new PDO(
