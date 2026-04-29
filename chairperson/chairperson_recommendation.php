@@ -9,7 +9,6 @@ if (!isset($_SESSION['user']) || $_SESSION['user']['role'] != 'chairman') {
 
 /* ================= SAFE ML LOAD ================= */
 $mlFile = "../ml/ml_results.json";
-
 $mlData = [];
 
 if (file_exists($mlFile)) {
@@ -28,27 +27,30 @@ $topScore = 0;
 $averageScore = 0;
 $ranked = [];
 
-/* ================= PROCESS ML ================= */
+/* ================= PROCESS ML DATA (SAFE + NORMALIZED) ================= */
 if (!empty($mlData)) {
 
     $sumScore = 0;
 
     foreach ($mlData as $row) {
 
-        $participants = $row['participants'] ?? 0;
-        $score = $row['predicted_score'] ?? 0;
+        $participants = (int)($row['participants'] ?? 0);
+        $score = (float)($row['predicted_score'] ?? 0);
 
-        $totalParticipants += (int)$participants;
-        $sumScore += (float)$score;
+        // FORCE SCORE LIMIT (0–100)
+        $score = max(0, min(100, $score));
+
+        $totalParticipants += $participants;
+        $sumScore += $score;
 
         $ranked[] = [
             "title" => $row['title'] ?? "Unknown",
-            "participants" => (int)$participants,
-            "score" => (float)$score
+            "participants" => $participants,
+            "score" => $score
         ];
     }
 
-    // sort by score
+    // sort by score DESC
     usort($ranked, function ($a, $b) {
         return $b['score'] <=> $a['score'];
     });
@@ -59,14 +61,15 @@ if (!empty($mlData)) {
     $averageScore = count($ranked) > 0 ? ($sumScore / count($ranked)) : 0;
 }
 
-/* ================= BUDGET ================= */
-$stmt = $conn->prepare("SELECT amount FROM budgets ORDER BY id DESC LIMIT 1");
+/* ================= FIXED BUDGET QUERY ================= */
+/* IMPORTANT: your column is total_amount not amount */
+$stmt = $conn->prepare("SELECT total_amount FROM budgets ORDER BY id DESC LIMIT 1");
 $stmt->execute();
 $budgetData = $stmt->fetch(PDO::FETCH_ASSOC);
 
-$totalBudget = $budgetData['amount'] ?? 0;
+$totalBudget = $budgetData['total_amount'] ?? 0;
 
-/* ================= FORECAST ================= */
+/* ================= SAFE FORECAST ================= */
 $predictedIncrease = 0;
 $futureBudget = $totalBudget;
 
@@ -80,23 +83,26 @@ $conclusion = [];
 
 if (empty($mlData)) {
 
-    $conclusion[] = "No ML data available yet. Please run the Python model to generate predictions.";
+    $conclusion[] = "No ML data available yet. Run the prediction model first.";
     $conclusion[] = "System is waiting for activity performance data.";
 
 } elseif ($topScore >= 70) {
 
-    $conclusion[] = "High-performing activities detected. Expand '$topActivity' to increase participation and budget potential.";
-    $conclusion[] = "Recommended next activity: Sports Tournament / Youth Festival / Community Outreach Event.";
+    $conclusion[] = "High engagement detected in '{$topActivity}'.";
+    $conclusion[] = "Recommendation: Expand successful programs and increase budget allocation.";
+    $conclusion[] = "Next Step: Scale sports, leadership, and youth outreach programs.";
 
 } elseif ($topScore >= 40) {
 
-    $conclusion[] = "Moderate engagement. Improve promotion and introduce more interactive youth programs.";
-    $conclusion[] = "Recommended next activity: Skills Workshop + Sports League.";
+    $conclusion[] = "Moderate engagement detected.";
+    $conclusion[] = "Recommendation: Improve promotion and participation strategies.";
+    $conclusion[] = "Next Step: Combine training + sports-based engagement.";
 
 } else {
 
-    $conclusion[] = "Low engagement detected. Revise programs and strengthen community participation.";
-    $conclusion[] = "Recommended next activity: Barangay Youth Summit or Free Community Events.";
+    $conclusion[] = "Low engagement detected.";
+    $conclusion[] = "Recommendation: Redesign programs to increase participation.";
+    $conclusion[] = "Next Step: Community outreach and youth motivation programs.";
 }
 ?>
 
@@ -140,19 +146,19 @@ if (empty($mlData)) {
 <!-- INSIGHT -->
 <div class="glass card">
     <h3>📊 ML System Insight</h3>
-    <p>Total Participants Recorded: <b><?= $totalParticipants ?></b></p>
-    <p>Highest Ranked Activity: <b><?= $topActivity ?></b></p>
-    <p>Top ML Score: <b><?= round($topScore, 2) ?>%</b></p>
-    <p>Average ML Score: <b><?= round($averageScore, 2) ?>%</b></p>
+    <p>Total Participants: <b><?= $totalParticipants ?></b></p>
+    <p>Top Activity: <b><?= htmlspecialchars($topActivity) ?></b></p>
+    <p>Top Score: <b><?= round($topScore, 2) ?>%</b></p>
+    <p>Average Score: <b><?= round($averageScore, 2) ?>%</b></p>
 </div>
 
 <!-- CONCLUSION -->
 <div class="glass card" style="margin-top:20px;">
-    <h3>📌 Conclusion & Next Activity Suggestion</h3>
+    <h3>📌 AI Conclusion</h3>
 
     <?php foreach ($conclusion as $c) { ?>
         <div class="box">
-            <?= $c ?>
+            <?= htmlspecialchars($c) ?>
         </div>
     <?php } ?>
 </div>
@@ -162,7 +168,7 @@ if (empty($mlData)) {
     <h3>💰 Budget Forecast</h3>
     <p>Present Budget: ₱ <?= number_format($totalBudget) ?></p>
     <p>Predicted Growth: ₱ <?= number_format($predictedIncrease) ?></p>
-    <p>Future Budget: ₱ <?= number_format($futureBudget) ?></p>
+    <p><b>Future Budget: ₱ <?= number_format($futureBudget) ?></b></p>
 </div>
 
 </div>

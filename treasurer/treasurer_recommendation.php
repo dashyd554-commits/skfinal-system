@@ -18,7 +18,7 @@ $stmt->execute();
 $topActivities = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 /* ================= TOTAL BUDGET ================= */
-$stmt = $conn->prepare("SELECT SUM(amount) AS total FROM budgets");
+$stmt = $conn->prepare("SELECT SUM(total_amount) AS total FROM budgets");
 $stmt->execute();
 $b = $stmt->fetch(PDO::FETCH_ASSOC);
 $totalBudget = $b['total'] ?? 0;

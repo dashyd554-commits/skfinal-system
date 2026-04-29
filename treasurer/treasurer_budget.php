@@ -37,7 +37,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 /* ================= GET BUDGET DATA ================= */
-$stmt = $conn->prepare("SELECT year, amount FROM budgets ORDER BY year ASC");
+$stmt = $conn->prepare("SELECT year, total_amount FROM budgets ORDER BY year ASC");
 $stmt->execute();
 $budgets = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -46,7 +46,7 @@ $amounts = [];
 
 foreach ($budgets as $b) {
     $years[] = $b['year'];
-    $amounts[] = (float)$b['amount'];
+    $amounts[] = (float)$b['total_amount'];
 }
 
 /* ================= ML ANALYSIS ================= */

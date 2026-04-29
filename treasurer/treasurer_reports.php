@@ -24,9 +24,9 @@ $years = [];
 $amounts = [];
 
 foreach ($budgets as $b) {
-    $totalBudget += (int)$b['amount'];
+    $totalBudget += (int)$b['total_amount'];
     $years[] = $b['year'];
-    $amounts[] = (int)$b['amount'];
+    $amounts[] = (int)$b['total_amount'];
 }
 
 $totalParticipants = 0;
@@ -150,7 +150,7 @@ tr:hover {
             <?php foreach ($budgets as $row) { ?>
             <tr>
                 <td><?= $row['id'] ?></td>
-                <td>₱ <?= number_format($row['amount']) ?></td>
+                <td>₱ <?= number_format($row['total_amount']) ?></td>
                 <td><?= $row['year'] ?></td>
             </tr>
             <?php } ?>

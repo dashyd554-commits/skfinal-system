@@ -7,86 +7,110 @@ if (!isset($_SESSION['user']) || $_SESSION['user']['role'] != 'chairman') {
     exit();
 }
 
-/* ==================== PRESENT BUDGET ==================== */
-$stmt = $conn->prepare("SELECT total_amount FROM budgets ORDER BY id DESC LIMIT 1");
+$barangay_id = $_SESSION['user']['barangay_id'];
+
+/* ================= BUDGET ================= */
+$stmt = $conn->prepare("
+    SELECT total_amount 
+    FROM budgets 
+    WHERE barangay_id = :barangay_id
+    ORDER BY year DESC
+    LIMIT 1
+");
+$stmt->bindValue(':barangay_id', $barangay_id);
 $stmt->execute();
 $budgetData = $stmt->fetch(PDO::FETCH_ASSOC);
+
 $totalBudget = $budgetData['total_amount'] ?? 0;
 
-/* ==================== ACTIVITIES ==================== */
-$stmt = $conn->prepare("SELECT COUNT(*) AS total_projects FROM activities");
-$stmt->execute();
-$totalProjects = $stmt->fetch(PDO::FETCH_ASSOC)['total_projects'] ?? 0;
-
-$stmt = $conn->prepare("SELECT COALESCE(SUM(participants),0) AS total_participants FROM activities");
-$stmt->execute();
-$totalParticipants = $stmt->fetch(PDO::FETCH_ASSOC)['total_participants'] ?? 0;
-
-$stmt = $conn->prepare("SELECT title, participants FROM activities");
+/* ================= ACTIVITIES ================= */
+$stmt = $conn->prepare("
+    SELECT title, participants, allocated_budget 
+    FROM activities 
+    WHERE barangay_id = :barangay_id
+");
+$stmt->bindValue(':barangay_id', $barangay_id);
 $stmt->execute();
 $activities = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+/* ================= INITIAL VALUES ================= */
+$totalParticipants = 0;
+$totalProjects = count($activities);
+$budgetUsed = 0;
 
 $labels = [];
 $data = [];
 
+/* ================= TOP / LOWEST ================= */
+$topActivity = "N/A";
+$topActivityParticipants = 0;
+
+$lowestActivity = "N/A";
+$lowestActivityParticipants = PHP_INT_MAX;
+
+/* ================= LOOP ================= */
 foreach ($activities as $a) {
+
     $labels[] = $a['title'];
     $data[] = $a['participants'];
-}
 
-/* ==================== SAFE ML LOAD ==================== */
-$mlFile = "../ml/ml_results.json";
-$mlData = [];
+    $totalParticipants += $a['participants'];
+    $budgetUsed += $a['allocated_budget'];
 
-if (file_exists($mlFile)) {
-    $json = file_get_contents($mlFile);
-    $decoded = json_decode($json, true);
+    // TOP
+    if ($a['participants'] > $topActivityParticipants) {
+        $topActivityParticipants = $a['participants'];
+        $topActivity = $a['title'];
+    }
 
-    if (is_array($decoded)) {
-        $mlData = $decoded;
+    // LOWEST
+    if ($a['participants'] < $lowestActivityParticipants) {
+        $lowestActivityParticipants = $a['participants'];
+        $lowestActivity = $a['title'];
     }
 }
 
-/* ==================== CLEAN ML ==================== */
-$cleanML = [];
-
-foreach ($mlData as $item) {
-    if (is_array($item)) {
-        $cleanML[] = [
-            'title' => $item['title'] ?? 'Unknown',
-            'participants' => $item['participants'] ?? 0,
-            'score' => $item['predicted_score'] ?? 0
-        ];
-    }
+if ($lowestActivityParticipants == PHP_INT_MAX) {
+    $lowestActivityParticipants = 0;
 }
 
-usort($cleanML, fn($a, $b) => $b['score'] <=> $a['score']);
+/* ================= REMAINING ================= */
+$remainingBudget = $totalBudget - $budgetUsed;
 
-$topActivity = $cleanML[0]['title'] ?? "No ML Data";
-$topScore = $cleanML[0]['score'] ?? 0;
+/* ================= ML SCORE ================= */
+$efficiency = ($budgetUsed > 0) ? ($totalParticipants / $budgetUsed) : 0;
+$budgetRatio = ($totalBudget > 0) ? ($budgetUsed / $totalBudget) : 0;
 
-/* ==================== FORECAST ==================== */
-$predictedIncrease = ($topScore / 100) * ($totalBudget * 0.30);
-$futureBudget = $totalBudget + $predictedIncrease;
+$mlScore = min(100, round(
+    ($efficiency * 50) +
+    ($budgetRatio * 30) +
+    ($totalProjects * 5)
+, 2));
 
-/* ==================== AI INSIGHT ==================== */
-if ($topScore >= 70) {
-    $mlTip = "High engagement detected. Strong community participation supports sustainable budget growth.";
-    $conclusion = "The system indicates a HIGH-PERFORMANCE community. Current programs are effective and can be expanded.";
-    $nextActivity = "Inter-Barangay Sports Festival / Youth Leadership Summit";
-} elseif ($topScore >= 40) {
-    $mlTip = "Moderate engagement detected. Some activities perform well but need improvement.";
-    $conclusion = "The system shows MODERATE engagement. Growth is possible with better program targeting.";
-    $nextActivity = "Community Clean-Up Drive + Environmental Awareness Campaign";
+/* ================= ML CONCLUSION ================= */
+if ($mlScore >= 70) {
+
+    $budgetIncreaseRate = 0.20;
+    $recommendation = "High performance detected. Increase annual budget for expansion.";
+    $nextSteps = "Scale successful programs and expand youth development projects.";
+    $priorityAction = "Focus on sports, leadership, and livelihood programs.";
+
+} elseif ($mlScore >= 40) {
+
+    $budgetIncreaseRate = 0.10;
+    $recommendation = "Moderate performance. Slight budget increase recommended.";
+    $nextSteps = "Improve engagement and strengthen participation.";
+    $priorityAction = "Enhance awareness campaigns and structured training.";
+
 } else {
-    $mlTip = "Low engagement detected. Participation needs improvement.";
-    $conclusion = "The system indicates LOW ENGAGEMENT. Immediate intervention is required.";
-    $nextActivity = "Youth Motivation Program + Skills Training Workshop";
+
+    $budgetIncreaseRate = 0.00;
+    $recommendation = "Low performance detected. Budget increase NOT recommended.";
+    $nextSteps = "Revise programs before increasing funding.";
+    $priorityAction = "Conduct consultation and redesign activities.";
 }
 
-$budgetImpact = ($totalParticipants > 0)
-    ? round(($totalParticipants / 10) * 50)
-    : 0;
+$nextYearBudget = $totalBudget + ($totalBudget * $budgetIncreaseRate);
 ?>
 
 <!DOCTYPE html>
@@ -106,7 +130,7 @@ $budgetImpact = ($totalParticipants > 0)
 .glass{padding:20px;margin-top:20px;background:white;border-radius:10px}
 table{width:100%;border-collapse:collapse;background:white}
 th{background:#0d6efd;color:white;padding:10px}
-td{padding:10px;border-bottom:1px solid #ddd}
+td{padding:10px;border-bottom:1px solid #ddd;text-align:center}
 </style>
 </head>
 
@@ -117,15 +141,25 @@ td{padding:10px;border-bottom:1px solid #ddd}
 <div class="main">
 
 <div class="header">
-    <h2>🤖 AI Chairman Dashboard</h2>
+    <h2>🤖 Chairman AI Dashboard</h2>
 </div>
 
-<!-- KPI -->
+<!-- KPI GRID -->
 <div class="grid">
 
     <div class="glass card">
         <h3>💰 Budget</h3>
-        <h2>₱ <?= number_format($totalBudget) ?></h2>
+        <h2>₱ <?= number_format($totalBudget,2) ?></h2>
+    </div>
+
+    <div class="glass card">
+        <h3>📉 Budget Used</h3>
+        <h2>₱ <?= number_format($budgetUsed,2) ?></h2>
+    </div>
+
+    <div class="glass card">
+        <h3>📊 Remaining</h3>
+        <h2>₱ <?= number_format($remainingBudget,2) ?></h2>
     </div>
 
     <div class="glass card">
@@ -139,9 +173,20 @@ td{padding:10px;border-bottom:1px solid #ddd}
     </div>
 
     <div class="glass card">
+        <h3>🤖 ML Score</h3>
+        <h2><?= $mlScore ?>%</h2>
+    </div>
+
+    <div class="glass card">
         <h3>🏆 Top Activity</h3>
         <h2><?= htmlspecialchars($topActivity) ?></h2>
-        <small><?= $topScore ?>%</small>
+        <small><?= $topActivityParticipants ?> participants</small>
+    </div>
+
+    <div class="glass card">
+        <h3>⚠ Lowest Activity</h3>
+        <h2><?= htmlspecialchars($lowestActivity) ?></h2>
+        <small><?= $lowestActivityParticipants ?> participants</small>
     </div>
 
 </div>
@@ -152,60 +197,42 @@ td{padding:10px;border-bottom:1px solid #ddd}
     <canvas id="chart"></canvas>
 </div>
 
-<!-- ML RESULTS -->
-<div class="glass">
-    <h3>🤖 ML Results</h3>
-
-    <table>
-        <tr>
-            <th>Activity</th>
-            <th>Participants</th>
-            <th>Score</th>
-        </tr>
-
-        <?php foreach (array_slice($cleanML, 0, 5) as $r) { ?>
-        <tr>
-            <td><?= htmlspecialchars($r['title']) ?></td>
-            <td><?= $r['participants'] ?></td>
-            <td><?= $r['score'] ?>%</td>
-        </tr>
-        <?php } ?>
-    </table>
-</div>
-
-<!-- FORECAST -->
-<div class="glass">
-    <h3>💰 Budget Forecast</h3>
-    <p>Present Budget: ₱ <?= number_format($totalBudget) ?></p>
-    <p>Predicted Growth: ₱ <?= number_format($predictedIncrease) ?></p>
-    <p>Future Budget Estimate: ₱ <?= number_format($futureBudget) ?></p>
-</div>
-
-<!-- INSIGHT -->
+<!-- ML INSIGHT -->
 <div class="glass">
     <h3>🤖 ML Insight</h3>
-    <p><?= $mlTip ?></p>
+    <p><?= $recommendation ?></p>
 </div>
 
-<!-- FINAL CONCLUSION -->
+<!-- ML CONCLUSION (NEW) -->
 <div class="glass">
-    <h3>📌 AI CONCLUSION & NEXT ACTIVITY SUGGESTION</h3>
+    <h3>🧠 Machine Learning Conclusion</h3>
 
-    <p><b>Conclusion:</b></p>
-    <p><?= $conclusion ?></p>
+    <p><b>📌 Recommendation:</b><br>
+        <?= $recommendation ?>
+    </p>
+
+    <p><b>🚀 Next Steps:</b><br>
+        <?= $nextSteps ?>
+    </p>
+
+    <p><b>⚠ Priority Action:</b><br>
+        <?= $priorityAction ?>
+    </p>
 
     <hr>
 
-    <p><b>🚀 Recommended Next Activity:</b></p>
-    <h3 style="color:#0d6efd;"><?= $nextActivity ?></h3>
+    <p><b>📈 Suggested Budget Increase:</b>
+        <?= ($budgetIncreaseRate * 100) ?>%
+    </p>
 
-    <hr>
-
-    <p><b>💰 Estimated Budget Impact:</b> ₱ <?= number_format($budgetImpact) ?></p>
+    <p><b>💰 Next Year Budget Estimate:</b>
+        ₱ <?= number_format($nextYearBudget,2) ?>
+    </p>
 </div>
 
 </div>
 
+<!-- CHART SCRIPT -->
 <script>
 new Chart(document.getElementById('chart'), {
     type: 'bar',
@@ -215,6 +242,12 @@ new Chart(document.getElementById('chart'), {
             label: 'Participants',
             data: <?= json_encode($data) ?>
         }]
+    },
+    options: {
+        responsive: true,
+        scales: {
+            y: { beginAtZero: true }
+        }
     }
 });
 </script>

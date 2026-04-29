@@ -9,7 +9,7 @@ if (!isset($_SESSION['user']) || $_SESSION['user']['role'] != 'treasurer') {
 
 /* ================= PRESENT ANNUAL BUDGET ================= */
 $stmt = $conn->prepare("
-    SELECT year, amount 
+    SELECT year, total_amount 
     FROM budgets 
     ORDER BY year DESC 
     LIMIT 1
@@ -18,11 +18,11 @@ $stmt->execute();
 $current = $stmt->fetch(PDO::FETCH_ASSOC);
 
 $currentYear = $current['year'] ?? 'N/A';
-$currentBudget = $current['amount'] ?? 0;
+$currentBudget = $current['total_amount'] ?? 0;
 
 /* ================= YEARLY DATA ================= */
 $stmt = $conn->prepare("
-    SELECT year, amount 
+    SELECT year, total_amount 
     FROM budgets 
     ORDER BY year ASC
 ");
@@ -33,7 +33,7 @@ $amounts = [];
 
 while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
     $years[] = $row['year'];
-    $amounts[] = $row['amount'];
+    $amounts[] = $row['total_amount'];
 }
 
 /* ================= ML ANALYSIS ================= */

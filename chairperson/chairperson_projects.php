@@ -12,25 +12,15 @@ $mlFile = "../ml/ml_results.json";
 $mlScores = [];
 
 if (file_exists($mlFile)) {
-
     $json = file_get_contents($mlFile);
     $decoded = json_decode($json, true);
 
-    // SUPPORT BOTH STRUCTURES:
-    // 1. ["results" => [...]]
-    // 2. direct array [...]
-
-    $mlArray = [];
-
-    if (isset($decoded['results']) && is_array($decoded['results'])) {
-        $mlArray = $decoded['results'];
-    } elseif (is_array($decoded)) {
-        $mlArray = $decoded;
-    }
+    $mlArray = $decoded['results'] ?? $decoded ?? [];
 
     foreach ($mlArray as $ml) {
 
-        $title = $ml['title'] ?? 'Unknown';
+        // normalize key (VERY IMPORTANT FIX)
+        $title = strtolower(trim($ml['title'] ?? ''));
         $score = $ml['score'] ?? $ml['predicted_score'] ?? 0;
 
         $mlScores[$title] = $score;
@@ -43,20 +33,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $name = $_POST['name'] ?? '';
     $purpose = $_POST['purpose'] ?? '';
     $target = $_POST['target_participants'] ?? 0;
-    $activity_id = $_POST['activity_id'] ?? '';
+    $activity_id = $_POST['activity_id'] ?? 0;
+    $budget = $_POST['budget'] ?? 0;
 
     if ($name && $activity_id) {
 
         $stmt = $conn->prepare("
-            INSERT INTO projects (name, purpose, target_participants, activity_id, status)
-            VALUES (:name, :purpose, :target, :activity_id, 'ongoing')
+            INSERT INTO projects 
+            (name, purpose, target_participants, activity_id, budget_allocated, status, treasurer_status)
+            VALUES 
+            (:name, :purpose, :target, :activity_id, :budget, 'pending', 'pending')
         ");
 
         $stmt->execute([
             ':name' => $name,
             ':purpose' => $purpose,
             ':target' => $target,
-            ':activity_id' => $activity_id
+            ':activity_id' => $activity_id,
+            ':budget' => $budget
         ]);
     }
 }
@@ -81,25 +75,37 @@ $projectInsights = [];
 
 foreach ($projects as $p) {
 
-    $activityTitle = $p['title'] ?? 'Unknown';
+    $activityTitle = strtolower(trim($p['title'] ?? 'unknown'));
     $mlScore = $mlScores[$activityTitle] ?? 0;
+
+    // fallback: partial match (VERY IMPORTANT FIX)
+    if ($mlScore == 0) {
+        foreach ($mlScores as $key => $value) {
+            if (strpos($key, $activityTitle) !== false) {
+                $mlScore = $value;
+                break;
+            }
+        }
+    }
 
     if ($mlScore >= 70) {
         $status = "Very High Success";
-        $suggestion = "Strong candidate for budget expansion.";
+        $suggestion = "Strong candidate for expansion.";
     } elseif ($mlScore >= 40) {
         $status = "Moderate Success";
-        $suggestion = "Improve promotion and participation.";
+        $suggestion = "Improve engagement strategy.";
     } else {
         $status = "Low Success";
-        $suggestion = "Needs redesign or better engagement strategy.";
+        $suggestion = "Needs redesign or better planning.";
     }
 
     $projectInsights[] = [
         'project' => $p['name'],
-        'activity' => $activityTitle,
+        'activity' => $p['title'],
+        'budget' => $p['budget_allocated'] ?? 0,
+        'status' => $p['treasurer_status'] ?? 'pending',
         'score' => $mlScore,
-        'status' => $status,
+        'ml_status' => $status,
         'suggestion' => $suggestion
     ];
 }
@@ -108,7 +114,7 @@ foreach ($projects as $p) {
 <!DOCTYPE html>
 <html>
 <head>
-<title>Projects</title>
+<title>Chairman Projects</title>
 
 <link rel="stylesheet" href="../assets/style.css">
 <link rel="stylesheet" href="../assets/sbstyle.css">
@@ -117,7 +123,6 @@ foreach ($projects as $p) {
 table {
     width: 100%;
     border-collapse: collapse;
-    margin-top: 10px;
     background: white;
 }
 
@@ -132,16 +137,11 @@ td {
     border-bottom: 1px solid #ddd;
 }
 
-tr:hover {
-    background: #f5f5f5;
-}
-
 .glass {
     padding: 20px;
     margin-bottom: 20px;
 }
 </style>
-
 </head>
 
 <body>
@@ -151,7 +151,7 @@ tr:hover {
 <div class="main">
 
 <div class="header">
-    <h2>📁 Projects with ML Analysis</h2>
+    <h2>📁 Projects + Budget Allocation (Chairman)</h2>
 </div>
 
 <!-- FORM -->
@@ -162,55 +162,49 @@ tr:hover {
 
         <input type="text" name="name" placeholder="Project Name" required><br><br>
 
-        <textarea name="purpose" placeholder="Project Purpose"></textarea><br><br>
+        <textarea name="purpose" placeholder="Purpose"></textarea><br><br>
 
         <input type="number" name="target_participants" placeholder="Target Participants"><br><br>
 
+        <input type="number" name="budget" placeholder="Budget Allocation (₱)" required><br><br>
+
         <select name="activity_id" required>
             <option value="">Select Activity</option>
-
             <?php foreach ($activities as $a) { ?>
                 <option value="<?= $a['id']; ?>">
                     <?= htmlspecialchars($a['title']); ?>
                 </option>
             <?php } ?>
-
         </select><br><br>
 
-        <button type="submit">➕ Add Project</button>
+        <button type="submit">➕ Create Project</button>
 
     </form>
 </div>
 
 <!-- TABLE -->
 <div class="glass">
-    <h3>📊 Project ML Evaluation</h3>
+    <h3>📊 Projects Overview</h3>
 
     <table>
         <tr>
             <th>Project</th>
             <th>Activity</th>
+            <th>Budget</th>
             <th>ML Score</th>
             <th>Status</th>
             <th>Recommendation</th>
         </tr>
 
-        <?php if (!empty($projectInsights)) { ?>
-            <?php foreach ($projectInsights as $p) { ?>
-            <tr>
-                <td><?= htmlspecialchars($p['project']) ?></td>
-                <td><?= htmlspecialchars($p['activity']) ?></td>
-                <td><?= $p['score'] ?>%</td>
-                <td><?= $p['status'] ?></td>
-                <td><?= $p['suggestion'] ?></td>
-            </tr>
-            <?php } ?>
-        <?php } else { ?>
-            <tr>
-                <td colspan="5" style="text-align:center;">
-                    No projects found
-                </td>
-            </tr>
+        <?php foreach ($projectInsights as $p) { ?>
+        <tr>
+            <td><?= htmlspecialchars($p['project']) ?></td>
+            <td><?= htmlspecialchars($p['activity']) ?></td>
+            <td>₱<?= number_format($p['budget'],2) ?></td>
+            <td><?= $p['score'] ?>%</td>
+            <td><?= $p['ml_status'] ?></td>
+            <td><?= $p['suggestion'] ?></td>
+        </tr>
         <?php } ?>
 
     </table>
