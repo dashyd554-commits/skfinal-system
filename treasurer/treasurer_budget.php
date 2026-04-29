@@ -132,6 +132,13 @@ button:hover {
 .down { background:red; }
 .stable { background:gray; }
 .no { background:gray; }
+
+.glass {
+    background: rgba(255,255,255,0.2);
+    backdrop-filter: blur(500px);
+    border-radius: 15px;
+    padding: 20px;
+}
 </style>
 
 </head>

@@ -115,9 +115,11 @@ if (empty($mlData)) {
 <link rel="stylesheet" href="../assets/sbstyle.css">
 
 <style>
-.main {
-    margin-left:220px;
+.main{
+    margin-left:190px;   /* moved dashboard 30px to left */
     padding:20px;
+    width:calc(100% - 200px);
+    overflow-x:hidden;
 }
 
 .card {
@@ -129,6 +131,12 @@ if (empty($mlData)) {
     margin:10px 0;
     background:rgba(255,255,255,0.6);
     border-radius:8px;
+}
+.glass {
+    background: rgba(255,255,255,0.2);
+    backdrop-filter: blur(500px);
+    border-radius: 15px;
+    padding: 20px;
 }
 </style>
 </head>

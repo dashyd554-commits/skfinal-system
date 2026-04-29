@@ -33,7 +33,7 @@ $stmt->bindValue(':barangay_id', $barangay_id);
 $stmt->execute();
 $activities = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-/* ================= INITIAL VALUES ================= */
+/* ================= INIT ================= */
 $totalParticipants = 0;
 $totalProjects = count($activities);
 $budgetUsed = 0;
@@ -41,73 +41,76 @@ $budgetUsed = 0;
 $labels = [];
 $data = [];
 
-/* ================= TOP / LOWEST ================= */
 $topActivity = "N/A";
-$topActivityParticipants = 0;
+$topCount = -1;
 
 $lowestActivity = "N/A";
-$lowestActivityParticipants = PHP_INT_MAX;
+$lowestCount = PHP_INT_MAX;
 
-/* ================= LOOP ================= */
+/* ================= PROCESS DATA ================= */
 foreach ($activities as $a) {
 
     $labels[] = $a['title'];
     $data[] = $a['participants'];
 
-    $totalParticipants += $a['participants'];
-    $budgetUsed += $a['allocated_budget'];
+    $totalParticipants += (int)$a['participants'];
+    $budgetUsed += (float)$a['allocated_budget'];
 
     // TOP
-    if ($a['participants'] > $topActivityParticipants) {
-        $topActivityParticipants = $a['participants'];
+    if ($a['participants'] > $topCount) {
+        $topCount = $a['participants'];
         $topActivity = $a['title'];
     }
 
     // LOWEST
-    if ($a['participants'] < $lowestActivityParticipants) {
-        $lowestActivityParticipants = $a['participants'];
+    if ($a['participants'] < $lowestCount) {
+        $lowestCount = $a['participants'];
         $lowestActivity = $a['title'];
     }
 }
 
-if ($lowestActivityParticipants == PHP_INT_MAX) {
-    $lowestActivityParticipants = 0;
-}
+if ($lowestCount == PHP_INT_MAX) $lowestCount = 0;
 
-/* ================= REMAINING ================= */
-$remainingBudget = $totalBudget - $budgetUsed;
+/* ================= SAFE CALCULATION ================= */
+$remainingBudget = max(0, $totalBudget - $budgetUsed);
 
-/* ================= ML SCORE ================= */
-$efficiency = ($budgetUsed > 0) ? ($totalParticipants / $budgetUsed) : 0;
-$budgetRatio = ($totalBudget > 0) ? ($budgetUsed / $totalBudget) : 0;
+/* normalize */
+$efficiency = ($budgetUsed > 0)
+    ? min(10, $totalParticipants / max(1, $budgetUsed))
+    : 0;
 
-$mlScore = min(100, round(
-    ($efficiency * 50) +
-    ($budgetRatio * 30) +
-    ($totalProjects * 5)
-, 2));
+$budgetRatio = ($totalBudget > 0)
+    ? ($budgetUsed / $totalBudget)
+    : 0;
 
-/* ================= ML CONCLUSION ================= */
+/* ================= REALISTIC ML SCORE ================= */
+$mlScore = (
+    ($efficiency * 30) +
+    ($budgetRatio * 40) +
+    ($totalProjects * 2)
+);
+
+/* clamp 0–100 */
+$mlScore = max(0, min(100, round($mlScore, 2)));
+
+/* ================= FIXED BUDGET LOGIC ================= */
 if ($mlScore >= 70) {
-
     $budgetIncreaseRate = 0.20;
-    $recommendation = "High performance detected. Increase annual budget for expansion.";
-    $nextSteps = "Scale successful programs and expand youth development projects.";
-    $priorityAction = "Focus on sports, leadership, and livelihood programs.";
+    $recommendation = "High performance detected. Strong justification for budget increase.";
+    $nextSteps = "Expand successful programs and scale youth engagement.";
+    $priorityAction = "Invest in sports, leadership, and livelihood projects.";
 
 } elseif ($mlScore >= 40) {
-
     $budgetIncreaseRate = 0.10;
-    $recommendation = "Moderate performance. Slight budget increase recommended.";
-    $nextSteps = "Improve engagement and strengthen participation.";
-    $priorityAction = "Enhance awareness campaigns and structured training.";
+    $recommendation = "Moderate performance. Controlled budget increase recommended.";
+    $nextSteps = "Improve participation and strengthen activity execution.";
+    $priorityAction = "Enhance outreach and structured training programs.";
 
 } else {
-
-    $budgetIncreaseRate = 0.00;
-    $recommendation = "Low performance detected. Budget increase NOT recommended.";
-    $nextSteps = "Revise programs before increasing funding.";
-    $priorityAction = "Conduct consultation and redesign activities.";
+    $budgetIncreaseRate = 0.05; // 🔥 FIX: never show 0 unless truly needed
+    $recommendation = "Low performance. Small budget adjustment only.";
+    $nextSteps = "Revise programs before scaling funding.";
+    $priorityAction = "Conduct evaluation and redesign activities.";
 }
 
 $nextYearBudget = $totalBudget + ($totalBudget * $budgetIncreaseRate);
@@ -124,13 +127,63 @@ $nextYearBudget = $totalBudget + ($totalBudget * $budgetIncreaseRate);
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <style>
-.main{margin-left:220px;padding:20px}
-.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:15px}
-.card{text-align:center;padding:20px}
-.glass{padding:20px;margin-top:20px;background:white;border-radius:10px}
-table{width:100%;border-collapse:collapse;background:white}
-th{background:#0d6efd;color:white;padding:10px}
-td{padding:10px;border-bottom:1px solid #ddd;text-align:center}
+*{
+    box-sizing:border-box;
+}
+
+body{
+    margin:0;
+    padding:0;
+    overflow-x:hidden;
+}
+
+.main{
+    margin-left:190px;
+    padding:20px;
+    width:calc(100% - 200px);
+    overflow-x:hidden;
+}
+
+.grid{
+    display:grid;
+    grid-template-columns:repeat(4,1fr);
+    gap:15px;
+    width:100%;
+}
+
+.card{
+    text-align:center;
+    padding:20px;
+}
+
+.glass {
+    background: rgba(255,255,255,0.2);
+    backdrop-filter: blur(500px);
+    border-radius: 15px;
+    padding: 20px;
+}
+
+canvas{
+    width:100% !important;
+    max-width:100%;
+}
+
+@media(max-width:1200px){
+    .grid{
+        grid-template-columns:repeat(2,1fr);
+    }
+}
+
+@media(max-width:768px){
+    .main{
+        margin-left:70px;
+        width:calc(100% - 80px);
+    }
+
+    .grid{
+        grid-template-columns:1fr;
+    }
+}
 </style>
 </head>
 
@@ -144,7 +197,7 @@ td{padding:10px;border-bottom:1px solid #ddd;text-align:center}
     <h2>🤖 Chairman AI Dashboard</h2>
 </div>
 
-<!-- KPI GRID -->
+<!-- GRID -->
 <div class="grid">
 
     <div class="glass card">
@@ -180,76 +233,87 @@ td{padding:10px;border-bottom:1px solid #ddd;text-align:center}
     <div class="glass card">
         <h3>🏆 Top Activity</h3>
         <h2><?= htmlspecialchars($topActivity) ?></h2>
-        <small><?= $topActivityParticipants ?> participants</small>
     </div>
 
     <div class="glass card">
         <h3>⚠ Lowest Activity</h3>
         <h2><?= htmlspecialchars($lowestActivity) ?></h2>
-        <small><?= $lowestActivityParticipants ?> participants</small>
     </div>
 
 </div>
 
-<!-- CHART -->
 <div class="glass">
-    <h3>📊 Activity Participation</h3>
+    <h3>📊 Real-Time Activity Participation Graph</h3>
     <canvas id="chart"></canvas>
 </div>
 
-<!-- ML INSIGHT -->
+<!-- INSIGHT -->
 <div class="glass">
-    <h3>🤖 ML Insight</h3>
+    <h3>🤖 AI Recommendation</h3>
     <p><?= $recommendation ?></p>
 </div>
 
-<!-- ML CONCLUSION (NEW) -->
+<!-- CONCLUSION -->
 <div class="glass">
-    <h3>🧠 Machine Learning Conclusion</h3>
+    <h3>🧠 ML Conclusion</h3>
 
-    <p><b>📌 Recommendation:</b><br>
-        <?= $recommendation ?>
-    </p>
-
-    <p><b>🚀 Next Steps:</b><br>
-        <?= $nextSteps ?>
-    </p>
-
-    <p><b>⚠ Priority Action:</b><br>
-        <?= $priorityAction ?>
-    </p>
+    <p><b>Next Steps:</b> <?= $nextSteps ?></p>
+    <p><b>Priority Action:</b> <?= $priorityAction ?></p>
 
     <hr>
 
-    <p><b>📈 Suggested Budget Increase:</b>
-        <?= ($budgetIncreaseRate * 100) ?>%
-    </p>
-
-    <p><b>💰 Next Year Budget Estimate:</b>
-        ₱ <?= number_format($nextYearBudget,2) ?>
-    </p>
+    <p><b>📈 Budget Increase:</b> <?= ($budgetIncreaseRate * 100) ?>%</p>
+    <p><b>💰 Next Year Budget:</b> ₱ <?= number_format($nextYearBudget,2) ?></p>
 </div>
 
 </div>
 
-<!-- CHART SCRIPT -->
 <script>
-new Chart(document.getElementById('chart'), {
-    type: 'bar',
-    data: {
-        labels: <?= json_encode($labels) ?>,
-        datasets: [{
-            label: 'Participants',
-            data: <?= json_encode($data) ?>
-        }]
-    },
-    options: {
-        responsive: true,
-        scales: {
-            y: { beginAtZero: true }
+let myChart;
+
+function loadLiveChart() {
+    fetch("get_live_chart_data.php")
+    .then(res => res.json())
+    .then(result => {
+
+        const labels = result.labels;
+        const values = result.data;
+
+        if (myChart) {
+            myChart.data.labels = labels;
+            myChart.data.datasets[0].data = values;
+            myChart.update();
+            return;
         }
-    }
-});
+
+        const ctx = document.getElementById('chart').getContext('2d');
+
+        myChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Participants',
+                    data: values,
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive:true,
+                animation:false,
+                scales:{
+                    y:{beginAtZero:true}
+                }
+            }
+        });
+    });
+}
+
+/* FIRST LOAD */
+loadLiveChart();
+
+/* AUTO UPDATE EVERY 3 SECONDS */
+setInterval(loadLiveChart, 3000);
 </script>
 
 </body>

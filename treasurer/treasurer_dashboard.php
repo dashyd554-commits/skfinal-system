@@ -116,6 +116,12 @@ canvas {
         grid-template-columns: 1fr;
     }
 }
+.glass {
+    background: rgba(255,255,255,0.2);
+    backdrop-filter: blur(500px);
+    border-radius: 15px;
+    padding: 20px;
+}
 </style>
 
 </head>

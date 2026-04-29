@@ -108,10 +108,11 @@ if ($pendingCount >= 10) {
 <link rel="stylesheet" href="../assets/sbstyle.css">
 
 <style>
-.main {
-    margin-left: 220px;
-    width: calc(100% - 220px);
-    padding: 20px;
+.main{
+    margin-left:190px;   /* moved dashboard 30px to left */
+    padding:20px;
+    width:calc(100% - 200px);
+    overflow-x:hidden;
 }
 
 table {
@@ -151,6 +152,12 @@ tr:hover {
     padding: 20px;
     margin-bottom: 20px;
     border-left: 5px solid;
+}
+.glass {
+    background: rgba(255,255,255,0.2);
+    backdrop-filter: blur(500px);
+    border-radius: 15px;
+    padding: 20px;
 }
 </style>
 

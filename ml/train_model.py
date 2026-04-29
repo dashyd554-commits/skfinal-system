@@ -10,10 +10,10 @@ from sklearn.linear_model import LinearRegression
 # ---------------- SAFE DB CONNECT ----------------
 def get_connection():
     return psycopg2.connect(
-        host=os.getenv("DB_HOST"),
-        database=os.getenv("DB_NAME"),
-        user=os.getenv("DB_USER"),
-        password=os.getenv("DB_PASSWORD"),
+        host=os.getenv("DB_HOST", "dpg-d7ocp6a8qa3s73ahfb4g-a.ohio-postgres.render.com"),
+        database=os.getenv("DB_NAME", "sk_system"),
+        user=os.getenv("DB_USER", "sk_new"),
+        password=os.getenv("DB_PASSWORD", "bX9G8vuFr3DTrHIASqTOsK9qCZ6A4lfZ"),
         port=os.getenv("DB_PORT", "5432")
     )
 
@@ -26,7 +26,7 @@ try:
         a.title,
         COALESCE(a.participants, 0) AS participants,
         COALESCE(
-            (SELECT amount FROM budgets ORDER BY id DESC LIMIT 1),
+            (SELECT total_amount FROM budgets ORDER BY id DESC LIMIT 1),
             1
         ) AS budget
     FROM activities a

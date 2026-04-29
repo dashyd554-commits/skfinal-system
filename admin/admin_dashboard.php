@@ -137,8 +137,10 @@ td {
 }
 
 .glass {
+    background: rgba(255,255,255,0.2);
+    backdrop-filter: blur(500px);
+    border-radius: 15px;
     padding: 20px;
-    margin-top: 20px;
 }
 
 .ml-box {

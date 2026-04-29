@@ -52,8 +52,10 @@ td {
 }
 
 .glass {
+    background: rgba(255,255,255,0.2);
+    backdrop-filter: blur(500px);
+    border-radius: 15px;
     padding: 20px;
-    margin-top: 20px;
 }
 
 .badge {
@@ -103,9 +105,9 @@ td {
                     </span>
                 </td>
                 <td><?= htmlspecialchars($log['table_name']) ?></td>
-                <td style="text-align:left;">
-                    <?= htmlspecialchars($log['description']) ?>
-                </td>
+                <td style="text-align:left; max-width:220px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+    <?= htmlspecialchars($log['description']) ?>
+</td>
                 <td><?= $log['action_time'] ?></td>
             </tr>
             <?php } ?>
