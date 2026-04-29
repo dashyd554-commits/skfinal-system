@@ -7,32 +7,56 @@ if (!isset($_SESSION['user']) || $_SESSION['user']['role'] != 'secretary') {
     exit();
 }
 
-/* ===================== GET ALL ACTIVITIES ===================== */
+/* ================= BARANGAY ID ================= */
+$barangay_id = $_SESSION['user']['barangay_id'];
+
+/* ================= GET ACTIVITIES (FILTERED) ================= */
 $stmt = $conn->prepare("
     SELECT title, participants 
     FROM activities
+    WHERE barangay_id = :barangay_id
 ");
-$stmt->execute();
+
+$stmt->execute([
+    ':barangay_id' => $barangay_id
+]);
+
 $activities = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-/* ===================== BASIC STATS ===================== */
+/* ================= BASIC STATS (FILTERED) ================= */
 $avg = 0;
 $totalParticipants = 0;
 
 if (!empty($activities)) {
 
-    $stmt = $conn->prepare("SELECT AVG(participants) AS avg_part FROM activities");
-    $stmt->execute();
+    $stmt = $conn->prepare("
+        SELECT AVG(participants) AS avg_part 
+        FROM activities 
+        WHERE barangay_id = :barangay_id
+    ");
+
+    $stmt->execute([
+        ':barangay_id' => $barangay_id
+    ]);
+
     $avgData = $stmt->fetch(PDO::FETCH_ASSOC);
     $avg = round($avgData['avg_part'] ?? 0, 2);
 
-    $stmt = $conn->prepare("SELECT COALESCE(SUM(participants),0) AS total FROM activities");
-    $stmt->execute();
+    $stmt = $conn->prepare("
+        SELECT COALESCE(SUM(participants),0) AS total 
+        FROM activities 
+        WHERE barangay_id = :barangay_id
+    ");
+
+    $stmt->execute([
+        ':barangay_id' => $barangay_id
+    ]);
+
     $totalData = $stmt->fetch(PDO::FETCH_ASSOC);
     $totalParticipants = (int)$totalData['total'];
 }
 
-/* ===================== ML PROCESSING ===================== */
+/* ================= ML PROCESSING ================= */
 $mlRanked = [];
 
 foreach ($activities as $a) {
@@ -43,12 +67,12 @@ foreach ($activities as $a) {
         ? ($participants / max($totalParticipants, 1)) * 100
         : 0;
 
-    // bonus only if above average
-    if ($participants >= $avg && $avg > 0) {
+    // bonus if above average
+    if ($avg > 0 && $participants >= $avg) {
         $score += 5;
     }
 
-    // CAP SCORE (important fix)
+    // CAP SCORE
     $score = min(100, $score);
 
     $mlRanked[] = [
@@ -58,16 +82,16 @@ foreach ($activities as $a) {
     ];
 }
 
-/* ===================== SORT ===================== */
+/* ================= SORT ================= */
 usort($mlRanked, function($a, $b) {
     return $b['score'] <=> $a['score'];
 });
 
-/* ===================== TOP ACTIVITY ===================== */
+/* ================= TOP ================= */
 $topActivity = $mlRanked[0]['title'] ?? 'No Data';
 $topScore = $mlRanked[0]['score'] ?? 0;
 
-/* ===================== INSIGHT ===================== */
+/* ================= INSIGHT ================= */
 if ($avg >= 50) {
     $mlInsight = "High community engagement detected. Activities are performing strongly.";
     $mlSuggestion = "Scale successful programs and replicate high-performing events.";
@@ -142,57 +166,57 @@ tr:hover { background: #f5f5f5; }
 
 <div class="main">
 
-    <div class="header">
-        <h2>🤖 ML Recommendations</h2>
-    </div>
+<div class="header">
+    <h2>🤖 ML Recommendations</h2>
+</div>
 
-    <div class="glass" style="padding:20px;">
+<div class="glass">
 
-        <h3>📌 Overview</h3>
-        <p>
-            Machine learning analysis of participation trends helps identify the most effective SK activities.
-        </p>
+    <h3>📌 Overview</h3>
+    <p>
+        Machine learning analysis of participation trends helps identify effective SK activities.
+    </p>
 
-        <hr>
+    <hr>
 
-        <h3>🔥 ML Ranked Activities</h3>
+    <h3>🔥 ML Ranked Activities</h3>
 
-        <table>
+    <table>
+        <tr>
+            <th>Activity</th>
+            <th>Participants</th>
+            <th>ML Score</th>
+        </tr>
+
+        <?php if (!empty($mlRanked)) { ?>
+            <?php foreach ($mlRanked as $row) { ?>
             <tr>
-                <th>Activity</th>
-                <th>Participants</th>
-                <th>ML Score</th>
+                <td><?= htmlspecialchars($row['title']) ?></td>
+                <td><?= (int)$row['participants'] ?></td>
+                <td><?= $row['score'] ?>%</td>
             </tr>
-
-            <?php if (!empty($mlRanked)) { ?>
-                <?php foreach ($mlRanked as $row) { ?>
-                <tr>
-                    <td><?= htmlspecialchars($row['title']) ?></td>
-                    <td><?= $row['participants'] ?></td>
-                    <td><?= $row['score'] ?>%</td>
-                </tr>
-                <?php } ?>
-            <?php } else { ?>
-                <tr>
-                    <td colspan="3" style="text-align:center;">No activity data found</td>
-                </tr>
             <?php } ?>
+        <?php } else { ?>
+            <tr>
+                <td colspan="3" style="text-align:center;">No activity data found</td>
+            </tr>
+        <?php } ?>
 
-        </table>
+    </table>
 
-        <hr>
+    <hr>
 
-        <h3>📊 ML Insight</h3>
-        <p class="highlight"><?= $mlInsight ?></p>
+    <h3>📊 ML Insight</h3>
+    <p class="highlight"><?= htmlspecialchars($mlInsight) ?></p>
 
-        <p><b>Top Activity:</b> <?= $topActivity ?> (<?= $topScore ?>%)</p>
+    <p><b>Top Activity:</b> <?= htmlspecialchars($topActivity) ?> (<?= $topScore ?>%)</p>
 
-        <hr>
+    <hr>
 
-        <h3>💡 AI Suggestions</h3>
-        <p><?= $mlSuggestion ?></p>
+    <h3>💡 AI Suggestions</h3>
+    <p><?= htmlspecialchars($mlSuggestion) ?></p>
 
-    </div>
+</div>
 
 </div>
 

@@ -7,6 +7,8 @@ if (!isset($_SESSION['user']) || $_SESSION['user']['role'] != 'chairman') {
     exit();
 }
 
+$barangay_id = $_SESSION['user']['barangay_id'];
+
 /* ================= SAFE ML LOAD ================= */
 $mlFile = "../ml/ml_results.json";
 $mlScores = [];
@@ -19,11 +21,15 @@ if (file_exists($mlFile)) {
 
     foreach ($mlArray as $ml) {
 
-        // normalize key (VERY IMPORTANT FIX)
         $title = strtolower(trim($ml['title'] ?? ''));
-        $score = $ml['score'] ?? $ml['predicted_score'] ?? 0;
+        $score = floatval($ml['predicted_score'] ?? $ml['score'] ?? 0);
 
-        $mlScores[$title] = $score;
+        // LIMIT SCORE TO 100%
+        $score = min(100, max(0, $score));
+
+        if ($title !== '') {
+            $mlScores[$title] = $score;
+        }
     }
 }
 
@@ -39,13 +45,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($name && $activity_id) {
 
         $stmt = $conn->prepare("
-            INSERT INTO projects 
-            (name, purpose, target_participants, activity_id, budget_allocated, status, treasurer_status)
-            VALUES 
-            (:name, :purpose, :target, :activity_id, :budget, 'pending', 'pending')
+            INSERT INTO projects
+            (barangay_id, name, purpose, target_participants, activity_id, budget_allocated, status, treasurer_status)
+            VALUES
+            (:barangay_id, :name, :purpose, :target, :activity_id, :budget, 'pending', 'pending')
         ");
 
         $stmt->execute([
+            ':barangay_id' => $barangay_id,
             ':name' => $name,
             ':purpose' => $purpose,
             ':target' => $target,
@@ -55,18 +62,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-/* ================= ACTIVITIES ================= */
-$stmt = $conn->prepare("SELECT id, title FROM activities");
+/* ================= ACTIVITIES (FILTERED) ================= */
+$stmt = $conn->prepare("
+    SELECT id, title 
+    FROM activities
+    WHERE barangay_id = :barangay_id
+");
+$stmt->bindValue(':barangay_id', $barangay_id);
 $stmt->execute();
 $activities = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-/* ================= PROJECT LIST ================= */
+/* ================= PROJECT LIST (FILTERED) ================= */
 $stmt = $conn->prepare("
     SELECT p.*, a.title 
     FROM projects p
     LEFT JOIN activities a ON p.activity_id = a.id
+    WHERE p.barangay_id = :barangay_id
     ORDER BY p.id DESC
 ");
+$stmt->bindValue(':barangay_id', $barangay_id);
 $stmt->execute();
 $projects = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -75,10 +89,11 @@ $projectInsights = [];
 
 foreach ($projects as $p) {
 
-    $activityTitle = strtolower(trim($p['title'] ?? 'unknown'));
+    $activityTitle = strtolower(trim($p['title'] ?? ''));
+
     $mlScore = $mlScores[$activityTitle] ?? 0;
 
-    // fallback: partial match (VERY IMPORTANT FIX)
+    // fallback partial match
     if ($mlScore == 0) {
         foreach ($mlScores as $key => $value) {
             if (strpos($key, $activityTitle) !== false) {
@@ -87,6 +102,8 @@ foreach ($projects as $p) {
             }
         }
     }
+
+    $mlScore = min(100, max(0, floatval($mlScore)));
 
     if ($mlScore >= 70) {
         $status = "Very High Success";
@@ -103,7 +120,7 @@ foreach ($projects as $p) {
         'project' => $p['name'],
         'activity' => $p['title'],
         'budget' => $p['budget_allocated'] ?? 0,
-        'status' => $p['treasurer_status'] ?? 'pending',
+        'treasurer' => $p['treasurer_status'] ?? 'pending',
         'score' => $mlScore,
         'ml_status' => $status,
         'suggestion' => $suggestion
@@ -120,28 +137,32 @@ foreach ($projects as $p) {
 <link rel="stylesheet" href="../assets/sbstyle.css">
 
 <style>
-table {
-    width: 100%;
-    border-collapse: collapse;
-    background: white;
+table{
+    width:100%;
+    border-collapse:collapse;
+    background:white;
+    margin-top:20px;
 }
 
-th {
-    background: #2d89ef;
-    color: white;
-    padding: 10px;
+th{
+    background:#2d89ef;
+    color:white;
+    padding:10px;
+    text-align:center;
 }
 
-td {
-    padding: 10px;
-    border-bottom: 1px solid #ddd;
+td{
+    padding:10px;
+    border-bottom:1px solid #ddd;
+    text-align:center;
 }
 
-.glass {
-    background: rgba(255,255,255,0.2);
-    backdrop-filter: blur(500px);
-    border-radius: 15px;
-    padding: 20px;
+.glass{
+    background:rgba(255,255,255,0.2);
+    backdrop-filter:blur(500px);
+    border-radius:15px;
+    padding:20px;
+    margin-top:20px;
 }
 </style>
 </head>
@@ -158,13 +179,13 @@ td {
 
 <!-- FORM -->
 <div class="glass">
-    <h3>Add Project</h3>
+    <h3>Add New Project</h3>
 
     <form method="POST">
 
         <input type="text" name="name" placeholder="Project Name" required><br><br>
 
-        <textarea name="purpose" placeholder="Purpose"></textarea><br><br>
+        <textarea name="purpose" placeholder="Project Purpose"></textarea><br><br>
 
         <input type="number" name="target_participants" placeholder="Target Participants"><br><br>
 
@@ -172,11 +193,13 @@ td {
 
         <select name="activity_id" required>
             <option value="">Select Activity</option>
+
             <?php foreach ($activities as $a) { ?>
                 <option value="<?= $a['id']; ?>">
                     <?= htmlspecialchars($a['title']); ?>
                 </option>
             <?php } ?>
+
         </select><br><br>
 
         <button type="submit">➕ Create Project</button>
@@ -186,7 +209,7 @@ td {
 
 <!-- TABLE -->
 <div class="glass">
-    <h3>📊 Projects Overview</h3>
+    <h3>📊 Barangay Project Overview</h3>
 
     <table>
         <tr>
@@ -194,19 +217,27 @@ td {
             <th>Activity</th>
             <th>Budget</th>
             <th>ML Score</th>
-            <th>Status</th>
+            <th>ML Status</th>
+            <th>Treasurer Approval</th>
             <th>Recommendation</th>
         </tr>
 
-        <?php foreach ($projectInsights as $p) { ?>
-        <tr>
-            <td><?= htmlspecialchars($p['project']) ?></td>
-            <td><?= htmlspecialchars($p['activity']) ?></td>
-            <td>₱<?= number_format($p['budget'],2) ?></td>
-            <td><?= $p['score'] ?>%</td>
-            <td><?= $p['ml_status'] ?></td>
-            <td><?= $p['suggestion'] ?></td>
-        </tr>
+        <?php if (!empty($projectInsights)) { ?>
+            <?php foreach ($projectInsights as $p) { ?>
+            <tr>
+                <td><?= htmlspecialchars($p['project']) ?></td>
+                <td><?= htmlspecialchars($p['activity']) ?></td>
+                <td>₱<?= number_format($p['budget'],2) ?></td>
+                <td><?= round($p['score'],2) ?>%</td>
+                <td><?= $p['ml_status'] ?></td>
+                <td><?= ucfirst($p['treasurer']) ?></td>
+                <td><?= $p['suggestion'] ?></td>
+            </tr>
+            <?php } ?>
+        <?php } else { ?>
+            <tr>
+                <td colspan="7">No projects found.</td>
+            </tr>
         <?php } ?>
 
     </table>

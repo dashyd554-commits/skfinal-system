@@ -7,25 +7,49 @@ if (!isset($_SESSION['user']) || $_SESSION['user']['role'] != 'treasurer') {
     exit();
 }
 
-/* ================= TOP ACTIVITIES ================= */
+/* ================= BARANGAY ID ================= */
+$barangay_id = $_SESSION['user']['barangay_id'];
+
+/* ================= TOP ACTIVITIES (FILTERED) ================= */
 $stmt = $conn->prepare("
     SELECT title, participants 
     FROM activities 
+    WHERE barangay_id = :barangay_id
     ORDER BY participants DESC 
     LIMIT 5
 ");
-$stmt->execute();
+
+$stmt->execute([
+    ':barangay_id' => $barangay_id
+]);
+
 $topActivities = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-/* ================= TOTAL BUDGET ================= */
-$stmt = $conn->prepare("SELECT SUM(total_amount) AS total FROM budgets");
-$stmt->execute();
+/* ================= TOTAL BUDGET (FILTERED) ================= */
+$stmt = $conn->prepare("
+    SELECT SUM(total_amount) AS total 
+    FROM budgets 
+    WHERE barangay_id = :barangay_id
+");
+
+$stmt->execute([
+    ':barangay_id' => $barangay_id
+]);
+
 $b = $stmt->fetch(PDO::FETCH_ASSOC);
 $totalBudget = $b['total'] ?? 0;
 
-/* ================= TOTAL PARTICIPANTS ================= */
-$stmt = $conn->prepare("SELECT SUM(participants) AS total FROM activities");
-$stmt->execute();
+/* ================= TOTAL PARTICIPANTS (FILTERED) ================= */
+$stmt = $conn->prepare("
+    SELECT SUM(participants) AS total 
+    FROM activities 
+    WHERE barangay_id = :barangay_id
+");
+
+$stmt->execute([
+    ':barangay_id' => $barangay_id
+]);
+
 $p = $stmt->fetch(PDO::FETCH_ASSOC);
 $totalParticipants = $p['total'] ?? 0;
 
@@ -44,7 +68,7 @@ foreach ($topActivities as $a) {
     $participants = (int)$a['participants'];
 
     $score = ($totalParticipants > 0)
-        ? ($participants / $totalParticipants) * 100
+        ? ($participants / max($totalParticipants, 1)) * 100
         : 0;
 
     $score = round($score, 2);
@@ -66,8 +90,10 @@ if ($totalParticipants >= 200) {
     $insight = "High engagement detected. Strong community participation supports effective budget utilization.";
 } elseif ($totalParticipants >= 100) {
     $insight = "Moderate engagement detected. Some activities perform well but can be improved.";
-} else {
+} elseif ($totalParticipants > 0) {
     $insight = "Low engagement detected. Activities need restructuring for better impact.";
+} else {
+    $insight = "No activity data available.";
 }
 
 /* ================= AI RECOMMENDATIONS ================= */
@@ -113,16 +139,11 @@ hr {
 }
 
 .glass {
-    padding: 20px;
-}
-
-.glass {
     background: rgba(255,255,255,0.2);
     backdrop-filter: blur(500px);
     border-radius: 15px;
     padding: 20px;
 }
-
 </style>
 
 </head>
@@ -133,58 +154,62 @@ hr {
 
 <div class="main">
 
-    <div class="header">
-        <h2>🤖 Budget Recommendations (ML Enhanced)</h2>
-        <p>AI-driven financial decision support</p>
-    </div>
+<div class="header">
+    <h2>🤖 Budget Recommendations (ML Enhanced)</h2>
+    <p>AI-driven financial decision support</p>
+</div>
 
-    <div class="glass">
+<div class="glass">
 
-        <!-- OVERVIEW -->
-        <h3>📊 Overview</h3>
-        <p>
-            This system analyzes budget allocation and activity participation
-            to generate intelligent recommendations.
-        </p>
+    <!-- OVERVIEW -->
+    <h3>📊 Overview</h3>
+    <p>
+        This system analyzes budget allocation and activity participation
+        per barangay to generate intelligent recommendations.
+    </p>
 
-        <hr>
+    <hr>
 
-        <!-- TOP ACTIVITIES -->
-        <h3>📌 ML Ranked Activities</h3>
+    <!-- TOP ACTIVITIES -->
+    <h3>📌 ML Ranked Activities</h3>
 
+    <?php if (!empty($mlRank)) { ?>
         <?php foreach ($mlRank as $r) { ?>
             <div class="item">
                 ✔ <b><?= htmlspecialchars($r['title']) ?></b>
-                — <?= $r['participants'] ?> participants
+                — <?= (int)$r['participants'] ?> participants
                 — Score: <?= $r['score'] ?>%
             </div>
         <?php } ?>
+    <?php } else { ?>
+        <p>No activity data found.</p>
+    <?php } ?>
 
-        <hr>
+    <hr>
 
-        <!-- BUDGET INFO -->
-        <h3>📊 Budget Insight</h3>
+    <!-- BUDGET INFO -->
+    <h3>📊 Budget Insight</h3>
 
-        <p><b>Total Budget:</b> ₱ <?= number_format($totalBudget) ?></p>
-        <p><b>Total Participants:</b> <?= number_format($totalParticipants) ?></p>
-        <p><b>Budget per Participant:</b> ₱ <?= round($ratio, 2) ?></p>
+    <p><b>Total Budget:</b> ₱ <?= number_format($totalBudget) ?></p>
+    <p><b>Total Participants:</b> <?= number_format($totalParticipants) ?></p>
+    <p><b>Budget per Participant:</b> ₱ <?= round($ratio, 2) ?></p>
 
-        <hr>
+    <hr>
 
-        <!-- ML INSIGHT -->
-        <h3>🤖 ML Insight</h3>
-        <p><?= $insight ?></p>
+    <!-- ML INSIGHT -->
+    <h3>🤖 ML Insight</h3>
+    <p><?= htmlspecialchars($insight) ?></p>
 
-        <hr>
+    <hr>
 
-        <!-- AI SUGGESTIONS -->
-        <h3>💡 AI Recommendations</h3>
+    <!-- AI SUGGESTIONS -->
+    <h3>💡 AI Recommendations</h3>
 
-        <?php foreach ($suggestion as $s) { ?>
-            <p>• <?= $s ?></p>
-        <?php } ?>
+    <?php foreach ($suggestion as $s) { ?>
+        <p>• <?= htmlspecialchars($s) ?></p>
+    <?php } ?>
 
-    </div>
+</div>
 
 </div>
 

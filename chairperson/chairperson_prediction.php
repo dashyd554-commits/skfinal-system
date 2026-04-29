@@ -7,7 +7,10 @@ if (!isset($_SESSION['user']) || $_SESSION['user']['role'] != 'chairman') {
     exit();
 }
 
-/* ================= LOAD ML JSON SAFELY ================= */
+/* ================= BARANGAY ID ================= */
+$barangay_id = $_SESSION['user']['barangay_id'];
+
+/* ================= LOAD ML JSON (FILTERED PER BARANGAY) ================= */
 $mlFile = "../ml/ml_results.json";
 $results = [];
 
@@ -16,39 +19,39 @@ if (file_exists($mlFile)) {
     $decoded = json_decode($json, true);
 
     if (is_array($decoded)) {
-        $results = $decoded;
+        foreach ($decoded as $row) {
+
+            // FILTER BY BARANGAY
+            if (($row['barangay_id'] ?? null) == $barangay_id) {
+                $results[] = $row;
+            }
+        }
     }
 }
 
 /* ================= DEFAULT VALUES ================= */
 $totalParticipants = 0;
 $totalBudget = 0;
-
 $topActivity = "No Data";
 $topScore = 0;
 
-/* ================= SAFE PROCESSING ================= */
+/* ================= PROCESS ML DATA ================= */
 if (!empty($results)) {
 
     foreach ($results as $r) {
-        $totalParticipants += $r['participants'] ?? 0;
-        $totalBudget += $r['budget'] ?? 0;
+        $totalParticipants += (int)($r['participants'] ?? 0);
+        $totalBudget += (float)($r['budget'] ?? 0);
     }
 
     $topActivity = $results[0]['title'] ?? "N/A";
     $topScore = $results[0]['predicted_score'] ?? 0;
 }
 
-/* ================= NORMALIZE ML SCORE (FIX OVER 100%) ================= */
+/* ================= SCORE NORMALIZATION ================= */
 function normalizeScore($score) {
-
-    // ensure number
     $score = floatval($score);
 
-    // prevent negatives
     if ($score < 0) return 0;
-
-    // HARD CAP 100%
     if ($score > 100) return 100;
 
     return round($score, 2);
@@ -56,16 +59,32 @@ function normalizeScore($score) {
 
 $topScore = normalizeScore($topScore);
 
+/* ================= BUDGET (FILTERED BY BARANGAY) ================= */
+$stmt = $conn->prepare("
+    SELECT total_amount 
+    FROM budgets 
+    WHERE barangay_id = :barangay_id 
+    ORDER BY id DESC 
+    LIMIT 1
+");
+
+$stmt->execute([
+    ':barangay_id' => $barangay_id
+]);
+
+$budgetData = $stmt->fetch(PDO::FETCH_ASSOC);
+$totalBudget = $budgetData['total_amount'] ?? 0;
+
 /* ================= CONCLUSION ================= */
 if ($topScore >= 70) {
-    $conclusion = "High engagement detected. Strong community participation supports program expansion and budget growth.";
-    $impact = "Increase funding allocation for scaling successful activities.";
+    $conclusion = "High engagement detected. Strong community participation supports program expansion.";
+    $impact = "Increase funding allocation for successful activities.";
 } elseif ($topScore >= 40) {
-    $conclusion = "Moderate engagement detected. Some programs are effective but need improvement in participation.";
-    $impact = "Optimize scheduling and improve outreach programs.";
+    $conclusion = "Moderate engagement detected. Some programs are effective but need improvement.";
+    $impact = "Improve outreach and participation strategies.";
 } else {
-    $conclusion = "Low engagement detected. Activities need restructuring and stronger community involvement.";
-    $impact = "Reevaluate program design and increase engagement strategies.";
+    $conclusion = "Low engagement detected. Activities need restructuring.";
+    $impact = "Redesign programs and increase community engagement.";
 }
 
 /* ================= RECOMMENDATIONS ================= */
@@ -73,15 +92,12 @@ $suggestions = [];
 
 $suggestions[] = "Focus on high-performing activities like $topActivity.";
 $suggestions[] = "Improve participation through community outreach.";
-$suggestions[] = "Schedule events during weekends or holidays.";
-$suggestions[] = "Use ML insights for annual SK planning decisions.";
+$suggestions[] = "Schedule activities during peak attendance times.";
+$suggestions[] = "Use ML insights for better SK planning decisions.";
 
-/* ================= REALISTIC BUDGET FORECAST ================= */
+/* ================= BUDGET FORECAST ================= */
 $growthRate = $topScore / 100;
-
-// SAFE multiplier (prevents insane budget jumps)
 $projectedIncrease = $totalBudget * ($growthRate * 0.25);
-
 $futureBudget = $totalBudget + $projectedIncrease;
 ?>
 
@@ -95,7 +111,7 @@ $futureBudget = $totalBudget + $projectedIncrease;
 
 <style>
 .main{
-    margin-left:190px;   /* moved dashboard 30px to left */
+    margin-left:190px;
     padding:20px;
     width:calc(100% - 200px);
     overflow-x:hidden;
@@ -106,6 +122,7 @@ $futureBudget = $totalBudget + $projectedIncrease;
     backdrop-filter: blur(500px);
     border-radius: 15px;
     padding: 20px;
+    margin-bottom: 20px;
 }
 
 table {
@@ -151,9 +168,9 @@ tr:hover {
 <!-- CONCLUSION -->
 <div class="glass">
     <h3>📌 AI Conclusion</h3>
-    <p><?= $conclusion ?></p>
+    <p><?= htmlspecialchars($conclusion) ?></p>
     <hr>
-    <p><b>📊 Recommendation Impact:</b> <?= $impact ?></p>
+    <p><b>📊 Recommendation Impact:</b> <?= htmlspecialchars($impact) ?></p>
 </div>
 
 <!-- BUDGET FORECAST -->
@@ -190,7 +207,7 @@ tr:hover {
             <?php foreach ($results as $r) { ?>
             <tr>
                 <td><?= htmlspecialchars($r['title'] ?? 'N/A') ?></td>
-                <td><?= $r['participants'] ?? 0 ?></td>
+                <td><?= (int)($r['participants'] ?? 0) ?></td>
                 <td>₱ <?= number_format($r['budget'] ?? 0, 2) ?></td>
                 <td><?= normalizeScore($r['predicted_score'] ?? 0) ?>%</td>
             </tr>

@@ -7,10 +7,13 @@ if (!isset($_SESSION['user']) || $_SESSION['user']['role'] != 'secretary') {
     exit();
 }
 
-/* ===================== MESSAGE (FIXED) ===================== */
+/* ================= BARANGAY ID ================= */
+$barangay_id = $_SESSION['user']['barangay_id'];
+
+/* ================= MESSAGE ================= */
 $message = "";
 
-/* ===================== INSERT ACTIVITY ===================== */
+/* ================= INSERT ACTIVITY (FIXED) ================= */
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $title = $_POST['title'] ?? '';
@@ -21,11 +24,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         try {
             $stmt = $conn->prepare("
-                INSERT INTO activities (title, participants, date)
-                VALUES (:title, :participants, :date)
+                INSERT INTO activities 
+                (barangay_id, title, participants, date)
+                VALUES 
+                (:barangay_id, :title, :participants, :date)
             ");
 
             $stmt->execute([
+                ':barangay_id' => $barangay_id,
                 ':title' => $title,
                 ':participants' => (int)$participants,
                 ':date' => $date
@@ -42,16 +48,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-/* ===================== GET ACTIVITIES ===================== */
+/* ================= GET ACTIVITIES (FILTERED) ================= */
 try {
-    $stmt = $conn->prepare("SELECT * FROM activities ORDER BY date DESC NULLS LAST");
-    $stmt->execute();
+    $stmt = $conn->prepare("
+        SELECT * 
+        FROM activities 
+        WHERE barangay_id = :barangay_id 
+        ORDER BY date DESC NULLS LAST
+    ");
+
+    $stmt->execute([
+        ':barangay_id' => $barangay_id
+    ]);
+
     $activities = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
 } catch (Exception $e) {
     $activities = [];
 }
 
-/* ===================== DEFAULT VALUES ===================== */
+/* ================= DEFAULT ================= */
 $totalParticipants = 0;
 $mlResults = [];
 $topActivity = "No Data";
@@ -59,7 +75,7 @@ $topScore = 0;
 $mlInsight = "";
 $recommendation = "";
 
-/* ===================== ML PROCESSING ===================== */
+/* ================= ML PROCESSING ================= */
 if (!empty($activities)) {
 
     foreach ($activities as $a) {
@@ -89,7 +105,7 @@ if (!empty($activities)) {
     $topScore = $mlResults[0]['score'] ?? 0;
 }
 
-/* ===================== INSIGHT ===================== */
+/* ================= INSIGHT ================= */
 if ($totalParticipants >= 200) {
     $mlInsight = "High engagement detected. Strong community participation.";
     $recommendation = "Maintain and expand successful activities.";
@@ -155,6 +171,7 @@ tr:hover { background: #f5f5f5; }
     margin-top: 10px;
     font-size: 14px;
 }
+
 .glass {
     background: rgba(255,255,255,0.2);
     backdrop-filter: blur(500px);
@@ -171,80 +188,81 @@ tr:hover { background: #f5f5f5; }
 
 <div class="main">
 
-    <div class="header">
-        <h2>🤖 Activities Management (ML Enhanced)</h2>
+<div class="header">
+    <h2>🤖 Activities Management (ML Enhanced)</h2>
+</div>
+
+<!-- FORM -->
+<div class="glass">
+
+    <h3>Add New Activity</h3>
+
+    <form method="POST">
+
+        <input type="text" name="title" placeholder="Activity Title" required>
+        <input type="number" name="participants" placeholder="Participants" required>
+        <input type="date" name="date" required>
+
+        <button type="submit">➕ Save Activity</button>
+
+    </form>
+
+    <div class="message">
+        <?= htmlspecialchars($message) ?>
     </div>
 
-    <!-- FORM -->
-    <div class="glass" style="padding:20px; margin-bottom:20px;">
+</div>
 
-        <h3>Add New Activity</h3>
+<!-- INSIGHT -->
+<div class="glass" style="margin-top:20px;">
 
-        <form method="POST">
+    <h3>🤖 ML Insight</h3>
 
-            <input type="text" name="title" placeholder="Activity Title" required>
-            <input type="number" name="participants" placeholder="Participants" required>
-            <input type="date" name="date" required>
+    <p><b><?= htmlspecialchars($mlInsight) ?></b></p>
+    <p><b>Top Activity:</b> <?= htmlspecialchars($topActivity) ?></p>
+    <p><b>Top Score:</b> <?= $topScore ?>%</p>
 
-            <button type="submit">➕ Save Activity</button>
+</div>
 
-        </form>
+<!-- TABLE -->
+<div class="glass" style="margin-top:20px;">
 
-        <!-- FIXED MESSAGE OUTPUT -->
-        <div class="message">
-            <?= htmlspecialchars($message) ?>
-        </div>
+    <h3>📊 Activity List (ML Ranked)</h3>
 
-    </div>
+    <table>
+        <tr>
+            <th>Title</th>
+            <th>Participants</th>
+            <th>ML Score</th>
+        </tr>
 
-    <!-- INSIGHT -->
-    <div class="glass" style="padding:20px; margin-bottom:20px;">
-
-        <h3>🤖 ML Insight</h3>
-
-        <p><b><?= htmlspecialchars($mlInsight) ?></b></p>
-        <p><b>Top Activity:</b> <?= htmlspecialchars($topActivity) ?></p>
-        <p><b>Top Score:</b> <?= $topScore ?>%</p>
-
-    </div>
-
-    <!-- TABLE -->
-    <div class="glass" style="padding:20px;">
-
-        <h3>📊 Activity List (ML Ranked)</h3>
-
-        <table>
+        <?php if (!empty($mlResults)) { ?>
+            <?php foreach ($mlResults as $r) { ?>
             <tr>
-                <th>Title</th>
-                <th>Participants</th>
-                <th>ML Score</th>
+                <td><?= htmlspecialchars($r['title']) ?></td>
+                <td><?= (int)$r['participants'] ?></td>
+                <td><?= $r['score'] ?>%</td>
             </tr>
-
-            <?php if (!empty($mlResults)) { ?>
-                <?php foreach ($mlResults as $r) { ?>
-                <tr>
-                    <td><?= htmlspecialchars($r['title']) ?></td>
-                    <td><?= $r['participants'] ?></td>
-                    <td><?= $r['score'] ?>%</td>
-                </tr>
-                <?php } ?>
-            <?php } else { ?>
-                <tr>
-                    <td colspan="3" style="text-align:center;">No activities found</td>
-                </tr>
             <?php } ?>
+        <?php } else { ?>
+            <tr>
+                <td colspan="3" style="text-align:center;">
+                    No activities found
+                </td>
+            </tr>
+        <?php } ?>
 
-        </table>
+    </table>
 
-    </div>
+</div>
 
-    <!-- RECOMMENDATION -->
-    <div class="glass" style="padding:20px; margin-top:20px;">
+<!-- RECOMMENDATION -->
+<div class="glass" style="margin-top:20px;">
 
-        <h3>💡 Recommendation</h3>
-        <p><?= htmlspecialchars($recommendation) ?></p>
+    <h3>💡 Recommendation</h3>
+    <p><?= htmlspecialchars($recommendation) ?></p>
 
-    </div>
+</div>
 
 </div>
 

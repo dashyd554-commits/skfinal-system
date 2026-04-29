@@ -7,7 +7,10 @@ if (!isset($_SESSION['user']) || $_SESSION['user']['role'] != 'chairman') {
     exit();
 }
 
-/* ================= SAFE ML LOAD ================= */
+/* ================= BARANGAY ID (IMPORTANT FIX) ================= */
+$barangay_id = $_SESSION['user']['barangay_id'];
+
+/* ================= SAFE ML LOAD (FILTERED BY BARANGAY) ================= */
 $mlFile = "../ml/ml_results.json";
 $mlData = [];
 
@@ -16,7 +19,13 @@ if (file_exists($mlFile)) {
     $decoded = json_decode($json, true);
 
     if (is_array($decoded)) {
-        $mlData = $decoded;
+        foreach ($decoded as $row) {
+
+            // ONLY LOAD DATA FOR THIS BARANGAY
+            if (($row['barangay_id'] ?? null) == $barangay_id) {
+                $mlData[] = $row;
+            }
+        }
     }
 }
 
@@ -27,7 +36,7 @@ $topScore = 0;
 $averageScore = 0;
 $ranked = [];
 
-/* ================= PROCESS ML DATA (SAFE + NORMALIZED) ================= */
+/* ================= PROCESS ML DATA ================= */
 if (!empty($mlData)) {
 
     $sumScore = 0;
@@ -37,7 +46,7 @@ if (!empty($mlData)) {
         $participants = (int)($row['participants'] ?? 0);
         $score = (float)($row['predicted_score'] ?? 0);
 
-        // FORCE SCORE LIMIT (0–100)
+        // clamp score 0–100
         $score = max(0, min(100, $score));
 
         $totalParticipants += $participants;
@@ -50,7 +59,6 @@ if (!empty($mlData)) {
         ];
     }
 
-    // sort by score DESC
     usort($ranked, function ($a, $b) {
         return $b['score'] <=> $a['score'];
     });
@@ -61,15 +69,24 @@ if (!empty($mlData)) {
     $averageScore = count($ranked) > 0 ? ($sumScore / count($ranked)) : 0;
 }
 
-/* ================= FIXED BUDGET QUERY ================= */
-/* IMPORTANT: your column is total_amount not amount */
-$stmt = $conn->prepare("SELECT total_amount FROM budgets ORDER BY id DESC LIMIT 1");
-$stmt->execute();
+/* ================= BUDGET (FILTERED BY BARANGAY) ================= */
+$stmt = $conn->prepare("
+    SELECT total_amount 
+    FROM budgets 
+    WHERE barangay_id = :barangay_id 
+    ORDER BY id DESC 
+    LIMIT 1
+");
+
+$stmt->execute([
+    ':barangay_id' => $barangay_id
+]);
+
 $budgetData = $stmt->fetch(PDO::FETCH_ASSOC);
 
 $totalBudget = $budgetData['total_amount'] ?? 0;
 
-/* ================= SAFE FORECAST ================= */
+/* ================= FORECAST ================= */
 $predictedIncrease = 0;
 $futureBudget = $totalBudget;
 
@@ -90,19 +107,19 @@ if (empty($mlData)) {
 
     $conclusion[] = "High engagement detected in '{$topActivity}'.";
     $conclusion[] = "Recommendation: Expand successful programs and increase budget allocation.";
-    $conclusion[] = "Next Step: Scale sports, leadership, and youth outreach programs.";
+    $conclusion[] = "Next Step: Scale youth and community programs.";
 
 } elseif ($topScore >= 40) {
 
     $conclusion[] = "Moderate engagement detected.";
-    $conclusion[] = "Recommendation: Improve promotion and participation strategies.";
-    $conclusion[] = "Next Step: Combine training + sports-based engagement.";
+    $conclusion[] = "Recommendation: Improve participation strategies.";
+    $conclusion[] = "Next Step: Strengthen program promotion.";
 
 } else {
 
     $conclusion[] = "Low engagement detected.";
-    $conclusion[] = "Recommendation: Redesign programs to increase participation.";
-    $conclusion[] = "Next Step: Community outreach and youth motivation programs.";
+    $conclusion[] = "Recommendation: Redesign activities.";
+    $conclusion[] = "Next Step: Increase community outreach.";
 }
 ?>
 
@@ -116,10 +133,9 @@ if (empty($mlData)) {
 
 <style>
 .main{
-    margin-left:190px;   /* moved dashboard 30px to left */
+    margin-left:190px;
     padding:20px;
     width:calc(100% - 200px);
-    overflow-x:hidden;
 }
 
 .card {
@@ -132,6 +148,7 @@ if (empty($mlData)) {
     background:rgba(255,255,255,0.6);
     border-radius:8px;
 }
+
 .glass {
     background: rgba(255,255,255,0.2);
     backdrop-filter: blur(500px);

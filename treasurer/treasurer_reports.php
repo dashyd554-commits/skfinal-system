@@ -7,14 +7,35 @@ if (!isset($_SESSION['user']) || $_SESSION['user']['role'] != 'treasurer') {
     exit();
 }
 
-/* ================= BUDGET DATA ================= */
-$stmt = $conn->prepare("SELECT * FROM budgets ORDER BY year DESC");
-$stmt->execute();
+/* ================= BARANGAY ID ================= */
+$barangay_id = $_SESSION['user']['barangay_id'];
+
+/* ================= BUDGET DATA (FILTERED) ================= */
+$stmt = $conn->prepare("
+    SELECT * 
+    FROM budgets 
+    WHERE barangay_id = :barangay_id 
+    ORDER BY year DESC
+");
+
+$stmt->execute([
+    ':barangay_id' => $barangay_id
+]);
+
 $budgets = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-/* ================= ACTIVITY DATA ================= */
-$stmt = $conn->prepare("SELECT title, participants FROM activities ORDER BY participants DESC");
-$stmt->execute();
+/* ================= ACTIVITY DATA (FILTERED) ================= */
+$stmt = $conn->prepare("
+    SELECT title, participants 
+    FROM activities 
+    WHERE barangay_id = :barangay_id 
+    ORDER BY participants DESC
+");
+
+$stmt->execute([
+    ':barangay_id' => $barangay_id
+]);
+
 $activities = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 /* ================= ML CALCULATIONS ================= */
@@ -35,11 +56,11 @@ foreach ($activities as $a) {
     $totalParticipants += (int)$a['participants'];
 }
 
-/* ================= SAFE TOP ACTIVITY ================= */
+/* ================= TOP ACTIVITY ================= */
 $topActivity = $activities[0]['title'] ?? 'N/A';
 $topParticipants = $activities[0]['participants'] ?? 0;
 
-/* ================= ML TREND ANALYSIS ================= */
+/* ================= ML TREND ================= */
 $trend = "stable";
 $mlInsight = "Insufficient data for ML analysis.";
 $recommendation = [];
@@ -132,23 +153,24 @@ tr:hover {
 
 <div class="main">
 
-    <div class="header">
-        <h2>📊 Treasurer Reports (ML Enhanced)</h2>
-        <p>Financial + Activity Intelligence System</p>
-    </div>
+<div class="header">
+    <h2>📊 Treasurer Reports (ML Enhanced)</h2>
+    <p>Financial + Activity Intelligence System</p>
+</div>
 
-    <!-- BUDGET REPORT -->
-    <div class="glass">
+<!-- BUDGET REPORT -->
+<div class="glass">
 
-        <h3>💰 Budget Records</h3>
+    <h3>💰 Budget Records</h3>
 
-        <table>
-            <tr>
-                <th>ID</th>
-                <th>Amount</th>
-                <th>Year</th>
-            </tr>
+    <table>
+        <tr>
+            <th>ID</th>
+            <th>Amount</th>
+            <th>Year</th>
+        </tr>
 
+        <?php if (!empty($budgets)) { ?>
             <?php foreach ($budgets as $row) { ?>
             <tr>
                 <td><?= $row['id'] ?></td>
@@ -156,53 +178,70 @@ tr:hover {
                 <td><?= $row['year'] ?></td>
             </tr>
             <?php } ?>
-        </table>
-
-    </div>
-
-    <!-- ACTIVITY REPORT -->
-    <div class="glass">
-
-        <h3>📌 Activity Participation</h3>
-
-        <table>
+        <?php } else { ?>
             <tr>
-                <th>Activity</th>
-                <th>Participants</th>
+                <td colspan="3" style="text-align:center;">No budget data found</td>
             </tr>
+        <?php } ?>
 
+    </table>
+
+</div>
+
+<!-- ACTIVITY REPORT -->
+<div class="glass">
+
+    <h3>📌 Activity Participation</h3>
+
+    <table>
+        <tr>
+            <th>Activity</th>
+            <th>Participants</th>
+        </tr>
+
+        <?php if (!empty($activities)) { ?>
             <?php foreach ($activities as $row) { ?>
             <tr>
                 <td><?= htmlspecialchars($row['title']) ?></td>
-                <td><?= $row['participants'] ?></td>
+                <td><?= (int)$row['participants'] ?></td>
             </tr>
             <?php } ?>
-        </table>
+        <?php } else { ?>
+            <tr>
+                <td colspan="2" style="text-align:center;">No activity data found</td>
+            </tr>
+        <?php } ?>
 
-    </div>
+    </table>
 
-    <!-- ML INSIGHT -->
-    <div class="glass">
+</div>
 
-        <h3>🤖 ML Insight</h3>
+<!-- ML INSIGHT -->
+<div class="glass">
 
-        <p><b>Budget Trend:</b> <?= strtoupper($trend) ?></p>
-        <p><?= $mlInsight ?></p>
+    <h3>🤖 ML Insight</h3>
 
-    </div>
+    <p><b>Budget Trend:</b> <?= strtoupper($trend) ?></p>
+    <p><?= htmlspecialchars($mlInsight) ?></p>
 
-    <!-- AI RECOMMENDATIONS -->
-    <div class="glass">
+</div>
 
-        <h3>💡 AI Recommendations</h3>
+<!-- AI RECOMMENDATIONS -->
+<div class="glass">
 
-        <ul>
+    <h3>💡 AI Recommendations</h3>
+
+    <ul>
+        <?php if (!empty($recommendation)) { ?>
             <?php foreach ($recommendation as $r) { ?>
-                <li><?= $r ?></li>
+                <li><?= htmlspecialchars($r) ?></li>
             <?php } ?>
-        </ul>
+        <?php } else { ?>
+            <li>No recommendations available</li>
+        <?php } ?>
+    </ul>
 
-    </div>
+</div>
 
 </div>
 

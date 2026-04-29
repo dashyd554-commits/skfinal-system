@@ -7,28 +7,50 @@ if (!isset($_SESSION['user']) || $_SESSION['user']['role'] != 'secretary') {
     exit();
 }
 
-/* ===================== SAFE GET ACTIVITIES ===================== */
+/* ================= BARANGAY ID ================= */
+$barangay_id = $_SESSION['user']['barangay_id'];
+
+/* ================= SAFE GET ACTIVITIES (FILTERED) ================= */
 try {
-    $stmt = $conn->prepare("SELECT * FROM activities ORDER BY date DESC");
-    $stmt->execute();
+    $stmt = $conn->prepare("
+        SELECT * 
+        FROM activities 
+        WHERE barangay_id = :barangay_id 
+        ORDER BY date DESC
+    ");
+
+    $stmt->execute([
+        ':barangay_id' => $barangay_id
+    ]);
+
     $activities = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
 } catch (Exception $e) {
     $activities = [];
 }
 
-/* ===================== TOTAL PARTICIPANTS ===================== */
+/* ================= TOTAL PARTICIPANTS (FILTERED) ================= */
 $totalParticipants = 0;
 
 try {
-    $stmt = $conn->prepare("SELECT COALESCE(SUM(participants),0) AS total FROM activities");
-    $stmt->execute();
+    $stmt = $conn->prepare("
+        SELECT COALESCE(SUM(participants),0) AS total 
+        FROM activities 
+        WHERE barangay_id = :barangay_id
+    ");
+
+    $stmt->execute([
+        ':barangay_id' => $barangay_id
+    ]);
+
     $totalData = $stmt->fetch(PDO::FETCH_ASSOC);
     $totalParticipants = (int)($totalData['total'] ?? 0);
+
 } catch (Exception $e) {
     $totalParticipants = 0;
 }
 
-/* ===================== ML PROCESSING ===================== */
+/* ================= ML PROCESSING ================= */
 $mlResults = [];
 
 if (!empty($activities)) {
@@ -49,7 +71,6 @@ if (!empty($activities)) {
         ];
     }
 
-    /* SORT ML */
     usort($mlResults, function($a, $b) {
         return $b['score'] <=> $a['score'];
     });
@@ -62,7 +83,7 @@ if (!empty($activities)) {
     $topScore = 0;
 }
 
-/* ===================== ML INSIGHT ===================== */
+/* ================= ML INSIGHT ================= */
 if ($totalParticipants >= 200) {
     $mlInsight = "High engagement detected. Activities are strongly supported by the community.";
     $recommendation = "Maintain successful programs and expand similar activities.";
@@ -71,7 +92,7 @@ if ($totalParticipants >= 200) {
     $recommendation = "Improve promotion and replicate successful events.";
 } elseif ($totalParticipants > 0) {
     $mlInsight = "Low engagement detected. Activities need improvement.";
-    $recommendation = "Increase outreach and redesign programs for better participation.";
+    $recommendation = "Increase outreach and redesign programs.";
 } else {
     $mlInsight = "No activity data available.";
     $recommendation = "Start adding activities to generate insights.";
@@ -118,6 +139,7 @@ tr:hover {
 .section {
     margin-top: 20px;
 }
+
 .glass {
     background: rgba(255,255,255,0.2);
     backdrop-filter: blur(500px);
@@ -134,62 +156,62 @@ tr:hover {
 
 <div class="main">
 
-    <div class="header">
-        <h2>🤖 Secretary Reports (ML Enhanced)</h2>
-        <p>AI-powered activity analytics and insights</p>
-    </div>
+<div class="header">
+    <h2>🤖 Secretary Reports (ML Enhanced)</h2>
+    <p>AI-powered activity analytics and insights</p>
+</div>
 
-    <!-- SUMMARY -->
-    <div class="glass section" style="padding:20px;">
-        <h3>📌 Summary</h3>
-        <p>Total Participants Recorded:</p>
-        <h2><?= $totalParticipants ?></h2>
-    </div>
+<!-- SUMMARY -->
+<div class="glass section">
+    <h3>📌 Summary</h3>
+    <p>Total Participants Recorded:</p>
+    <h2><?= $totalParticipants ?></h2>
+</div>
 
-    <!-- ML INSIGHT -->
-    <div class="glass section" style="padding:20px;">
-        <h3>🤖 ML Insight</h3>
-        <p class="highlight"><?= $mlInsight ?></p>
+<!-- ML INSIGHT -->
+<div class="glass section">
+    <h3>🤖 ML Insight</h3>
+    <p class="highlight"><?= htmlspecialchars($mlInsight) ?></p>
 
-        <p><b>Top Activity:</b> <?= $topActivity ?></p>
-        <p><b>Top Score:</b> <?= $topScore ?>%</p>
-    </div>
+    <p><b>Top Activity:</b> <?= htmlspecialchars($topActivity) ?></p>
+    <p><b>Top Score:</b> <?= $topScore ?>%</p>
+</div>
 
-    <!-- TABLE -->
-    <div class="glass section" style="padding:20px;">
-        <h3>📊 Activity List (ML Ranked)</h3>
+<!-- TABLE -->
+<div class="glass section">
+    <h3>📊 Activity List (ML Ranked)</h3>
 
-        <table>
+    <table>
+        <tr>
+            <th>Title</th>
+            <th>Participants</th>
+            <th>Date</th>
+            <th>ML Score</th>
+        </tr>
+
+        <?php if (!empty($mlResults)) { ?>
+            <?php foreach ($mlResults as $row) { ?>
             <tr>
-                <th>Title</th>
-                <th>Participants</th>
-                <th>Date</th>
-                <th>ML Score</th>
+                <td><?= htmlspecialchars($row['title']) ?></td>
+                <td><?= (int)$row['participants'] ?></td>
+                <td><?= $row['date'] ?></td>
+                <td><?= $row['score'] ?>%</td>
             </tr>
-
-            <?php if (!empty($mlResults)) { ?>
-                <?php foreach ($mlResults as $row) { ?>
-                <tr>
-                    <td><?= htmlspecialchars($row['title']) ?></td>
-                    <td><?= $row['participants'] ?></td>
-                    <td><?= $row['date'] ?></td>
-                    <td><?= $row['score'] ?>%</td>
-                </tr>
-                <?php } ?>
-            <?php } else { ?>
-                <tr>
-                    <td colspan="4" style="text-align:center;">No activity data found</td>
-                </tr>
             <?php } ?>
+        <?php } else { ?>
+            <tr>
+                <td colspan="4" style="text-align:center;">No activity data found</td>
+            </tr>
+        <?php } ?>
 
-        </table>
-    </div>
+    </table>
+</div>
 
-    <!-- RECOMMENDATION -->
-    <div class="glass section" style="padding:20px;">
-        <h3>💡 Recommendation</h3>
-        <p><?= $recommendation ?></p>
-    </div>
+<!-- RECOMMENDATION -->
+<div class="glass section">
+    <h3>💡 Recommendation</h3>
+    <p><?= htmlspecialchars($recommendation) ?></p>
+</div>
 
 </div>
 

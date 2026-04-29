@@ -7,26 +7,38 @@ if (!isset($_SESSION['user']) || $_SESSION['user']['role'] != 'treasurer') {
     exit();
 }
 
-/* ================= PRESENT ANNUAL BUDGET ================= */
+/* ================= BARANGAY ID ================= */
+$barangay_id = $_SESSION['user']['barangay_id'];
+
+/* ================= PRESENT ANNUAL BUDGET (FILTERED) ================= */
 $stmt = $conn->prepare("
     SELECT year, total_amount 
     FROM budgets 
+    WHERE barangay_id = :barangay_id
     ORDER BY year DESC 
     LIMIT 1
 ");
-$stmt->execute();
+
+$stmt->execute([
+    ':barangay_id' => $barangay_id
+]);
+
 $current = $stmt->fetch(PDO::FETCH_ASSOC);
 
 $currentYear = $current['year'] ?? 'N/A';
 $currentBudget = $current['total_amount'] ?? 0;
 
-/* ================= YEARLY DATA ================= */
+/* ================= YEARLY DATA (FILTERED) ================= */
 $stmt = $conn->prepare("
     SELECT year, total_amount 
     FROM budgets 
+    WHERE barangay_id = :barangay_id
     ORDER BY year ASC
 ");
-$stmt->execute();
+
+$stmt->execute([
+    ':barangay_id' => $barangay_id
+]);
 
 $years = [];
 $amounts = [];
@@ -52,11 +64,11 @@ if (count($amounts) >= 2) {
         $mlScore = 85;
     } elseif ($last < $prev) {
         $trend = "down";
-        $mlInsight = "Budget trend is decreasing. Review funding sources and allocations.";
+        $mlInsight = "Budget trend is decreasing. Review funding sources.";
         $mlScore = 40;
     } else {
         $trend = "stable";
-        $mlInsight = "Budget is stable. Maintain current financial strategy.";
+        $mlInsight = "Budget is stable. Maintain current strategy.";
         $mlScore = 60;
     }
 }
@@ -95,10 +107,6 @@ if ($trend == "up") {
     text-align: center;
 }
 
-canvas {
-    max-width: 100%;
-}
-
 .badge {
     display:inline-block;
     padding:5px 10px;
@@ -116,6 +124,7 @@ canvas {
         grid-template-columns: 1fr;
     }
 }
+
 .glass {
     background: rgba(255,255,255,0.2);
     backdrop-filter: blur(500px);
@@ -132,52 +141,52 @@ canvas {
 
 <div class="main">
 
-    <div class="header">
-        <h2>💰 Treasurer Dashboard (ML Enhanced)</h2>
-        <p>Financial monitoring with predictive insights</p>
+<div class="header">
+    <h2>💰 Treasurer Dashboard (ML Enhanced)</h2>
+    <p>Financial monitoring with predictive insights</p>
+</div>
+
+<!-- KPI CARDS -->
+<div class="grid">
+
+    <div class="glass card">
+        <h3>📅 Present Year</h3>
+        <h2><?= $currentYear ?></h2>
     </div>
 
-    <!-- KPI CARDS -->
-    <div class="grid">
-
-        <div class="glass card">
-            <h3>📅 Present Year</h3>
-            <h2><?= $currentYear ?></h2>
-        </div>
-
-        <div class="glass card">
-            <h3>💰 Current Budget</h3>
-            <h2>₱ <?= number_format($currentBudget) ?></h2>
-        </div>
-
-        <div class="glass card">
-            <h3>📊 Trend</h3>
-            <span class="badge <?= $trend ?>">
-                <?= strtoupper($trend) ?>
-            </span>
-        </div>
-
+    <div class="glass card">
+        <h3>💰 Current Budget</h3>
+        <h2>₱ <?= number_format($currentBudget) ?></h2>
     </div>
 
-    <!-- CHART -->
-    <div class="glass" style="margin-top:20px; padding:20px;">
-        <h3>📊 Budget History</h3>
-        <canvas id="chart"></canvas>
+    <div class="glass card">
+        <h3>📊 Trend</h3>
+        <span class="badge <?= $trend ?>">
+            <?= strtoupper($trend) ?>
+        </span>
     </div>
 
-    <!-- ML INSIGHT -->
-    <div class="glass" style="margin-top:20px; padding:20px;">
-        <h3>🤖 ML Insight</h3>
-        <p><?= $mlInsight ?></p>
-        <p><b>ML Score:</b> <?= $mlScore ?>%</p>
-    </div>
+</div>
 
-    <!-- FORECAST -->
-    <div class="glass" style="margin-top:20px; padding:20px;">
-        <h3>📈 Forecast</h3>
-        <p>Projected Next Budget:</p>
-        <h2>₱ <?= number_format($forecast) ?></h2>
-    </div>
+<!-- CHART -->
+<div class="glass" style="margin-top:20px;">
+    <h3>📊 Budget History</h3>
+    <canvas id="chart"></canvas>
+</div>
+
+<!-- ML INSIGHT -->
+<div class="glass" style="margin-top:20px;">
+    <h3>🤖 ML Insight</h3>
+    <p><?= htmlspecialchars($mlInsight) ?></p>
+    <p><b>ML Score:</b> <?= $mlScore ?>%</p>
+</div>
+
+<!-- FORECAST -->
+<div class="glass" style="margin-top:20px;">
+    <h3>📈 Forecast</h3>
+    <p>Projected Next Budget:</p>
+    <h2>₱ <?= number_format($forecast) ?></h2>
+</div>
 
 </div>
 

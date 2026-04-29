@@ -7,22 +7,34 @@ if (!isset($_SESSION['user']) || $_SESSION['user']['role'] != 'secretary') {
     exit();
 }
 
-/* ===================== SAFE DATA LOAD ===================== */
+/* ================= BARANGAY ID FIX ================= */
+$barangay_id = $_SESSION['user']['barangay_id'];
+
+/* ================= SAFE DATA LOAD (FILTERED) ================= */
 try {
-    $stmt = $conn->prepare("SELECT title, participants FROM activities");
-    $stmt->execute();
+    $stmt = $conn->prepare("
+        SELECT title, participants 
+        FROM activities 
+        WHERE barangay_id = :barangay_id
+    ");
+
+    $stmt->execute([
+        ':barangay_id' => $barangay_id
+    ]);
+
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
 } catch (Exception $e) {
     $rows = [];
 }
 
-/* ===================== INIT ===================== */
+/* ================= INIT ================= */
 $labels = [];
 $data = [];
 $total = 0;
 $mlResults = [];
 
-/* ===================== PROCESS DATA ===================== */
+/* ================= PROCESS DATA ================= */
 if (!empty($rows)) {
 
     foreach ($rows as $row) {
@@ -33,12 +45,11 @@ if (!empty($rows)) {
         $total += $participants;
     }
 
-    /* ===================== STABLE ML SCORE ===================== */
+    /* ================= ML SCORE ================= */
     foreach ($rows as $row) {
 
         $participants = (int)($row['participants'] ?? 0);
 
-        // smoother ML formula (prevents extreme imbalance)
         $score = ($total > 0)
             ? sqrt($participants / max($total, 1)) * 100
             : 0;
@@ -50,7 +61,6 @@ if (!empty($rows)) {
         ];
     }
 
-    /* SORT */
     usort($mlResults, function($a, $b) {
         return $b['score'] <=> $a['score'];
     });
@@ -63,7 +73,7 @@ if (!empty($rows)) {
     $topScore = 0;
 }
 
-/* ===================== INSIGHT ===================== */
+/* ================= INSIGHT ================= */
 if ($total >= 200) {
     $mlInsight = "High engagement detected. Strong community participation.";
     $recommendation = "Maintain and expand successful activities.";
@@ -112,6 +122,7 @@ if ($total >= 200) {
     font-weight: bold;
     color: #2d89ef;
 }
+
 .glass {
     background: rgba(255,255,255,0.2);
     backdrop-filter: blur(500px);
@@ -128,78 +139,80 @@ if ($total >= 200) {
 
 <div class="main">
 
-    <div class="header">
-        <h2>🤖 Secretary Dashboard (ML Enhanced)</h2>
+<div class="header">
+    <h2>🤖 Secretary Dashboard (ML Enhanced)</h2>
+</div>
+
+<!-- KPI -->
+<div class="grid">
+
+    <div class="glass card">
+        <h3>👥 Total Participants</h3>
+        <h2><?= $total ?></h2>
     </div>
 
-    <!-- KPI -->
-    <div class="grid">
-
-        <div class="glass card">
-            <h3>👥 Total Participants</h3>
-            <h2><?= $total ?></h2>
-        </div>
-
-        <div class="glass card">
-            <h3>📊 Activities Count</h3>
-            <h2><?= count($labels) ?></h2>
-        </div>
-
+    <div class="glass card">
+        <h3>📊 Activities Count</h3>
+        <h2><?= count($labels) ?></h2>
     </div>
 
-    <!-- CHART -->
-    <div class="glass" style="margin-top:20px;">
-        <h3>📊 Participation per Activity</h3>
-        <canvas id="chart"></canvas>
-    </div>
+</div>
 
-    <!-- ML RANKING -->
-    <div class="glass" style="margin-top:20px;">
-        <h3>🤖 ML Activity Ranking</h3>
+<!-- CHART -->
+<div class="glass" style="margin-top:20px;">
+    <h3>📊 Participation per Activity</h3>
+    <canvas id="chart"></canvas>
+</div>
 
-        <table width="100%">
+<!-- ML RANKING -->
+<div class="glass" style="margin-top:20px;">
+    <h3>🤖 ML Activity Ranking</h3>
+
+    <table width="100%">
+        <tr>
+            <th>Activity</th>
+            <th>Participants</th>
+            <th>ML Score</th>
+        </tr>
+
+        <?php if (!empty($mlResults)) { ?>
+            <?php foreach ($mlResults as $r) { ?>
             <tr>
-                <th>Activity</th>
-                <th>Participants</th>
-                <th>ML Score</th>
+                <td><?= htmlspecialchars($r['title']) ?></td>
+                <td><?= (int)$r['participants'] ?></td>
+                <td><?= $r['score'] ?>%</td>
             </tr>
-
-            <?php if (!empty($mlResults)) { ?>
-                <?php foreach ($mlResults as $r) { ?>
-                <tr>
-                    <td><?= htmlspecialchars($r['title']) ?></td>
-                    <td><?= $r['participants'] ?></td>
-                    <td><?= $r['score'] ?>%</td>
-                </tr>
-                <?php } ?>
-            <?php } else { ?>
-                <tr>
-                    <td colspan="3" style="text-align:center;">No activity data found</td>
-                </tr>
             <?php } ?>
+        <?php } else { ?>
+            <tr>
+                <td colspan="3" style="text-align:center;">
+                    No activity data found
+                </td>
+            </tr>
+        <?php } ?>
 
-        </table>
-    </div>
+    </table>
+</div>
 
-    <!-- INSIGHT -->
-    <div class="glass" style="margin-top:20px;">
-        <h3>📢 AI Insight</h3>
-        <p class="insight"><?= $mlInsight ?></p>
-    </div>
+<!-- INSIGHT -->
+<div class="glass" style="margin-top:20px;">
+    <h3>📢 AI Insight</h3>
+    <p class="insight"><?= htmlspecialchars($mlInsight) ?></p>
+</div>
 
-    <!-- RECOMMENDATION -->
-    <div class="glass" style="margin-top:20px;">
-        <h3>💡 Recommendation</h3>
-        <p class="highlight"><?= $recommendation ?></p>
-    </div>
+<!-- RECOMMENDATION -->
+<div class="glass" style="margin-top:20px;">
+    <h3>💡 Recommendation</h3>
+    <p class="highlight"><?= htmlspecialchars($recommendation) ?></p>
+</div>
 
-    <!-- TOP -->
-    <div class="glass" style="margin-top:20px;">
-        <h3>🏆 Top Activity (ML)</h3>
-        <p class="highlight">
-            <?= $topActivity ?> (<?= $topScore ?>%)
-        </p>
-    </div>
+<!-- TOP -->
+<div class="glass" style="margin-top:20px;">
+    <h3>🏆 Top Activity (ML)</h3>
+    <p class="highlight">
+        <?= htmlspecialchars($topActivity) ?> (<?= $topScore ?>%)
+    </p>
+</div>
 
 </div>
 
