@@ -2,113 +2,149 @@
 session_start();
 include '../config/db.php';
 
-if (!isset($_SESSION['user']) || $_SESSION['user']['role'] !== 'admin') {
+if (!isset($_SESSION['admin'])) {
     header("Location: ../index.php");
     exit();
 }
 
-/* ================= TOTAL BARANGAYS ================= */
-$stmt = $conn->prepare("SELECT COUNT(*) FROM barangays");
-$stmt->execute();
-$totalBarangays = $stmt->fetchColumn();
+/* ================= KPI ================= */
+function getCount($conn, $sql) {
+    $stmt = $conn->prepare($sql);
+    $stmt->execute();
+    return $stmt->fetch(PDO::FETCH_ASSOC)['total'] ?? 0;
+}
 
-/* ================= TOTAL USERS ================= */
-$stmt = $conn->prepare("SELECT COUNT(*) FROM users WHERE status='approved'");
-$stmt->execute();
-$totalUsers = $stmt->fetchColumn();
+$totalUsers = getCount($conn, "SELECT COUNT(*) AS total FROM users");
+$pendingUsers = getCount($conn, "SELECT COUNT(*) AS total FROM users WHERE status='pending'");
+$totalBarangays = getCount($conn, "SELECT COUNT(*) AS total FROM barangays");
+$totalActivities = getCount($conn, "SELECT COUNT(*) AS total FROM activities");
 
-/* ================= TOTAL BUDGET ================= */
-$stmt = $conn->prepare("SELECT COALESCE(SUM(annual_budget),0) FROM budgets");
-$stmt->execute();
-$totalBudget = $stmt->fetchColumn();
-
-/* ================= TOTAL PROJECTS ================= */
-$stmt = $conn->prepare("SELECT COUNT(*) FROM proposals WHERE status='approved'");
-$stmt->execute();
-$totalProjects = $stmt->fetchColumn();
-
-/* ================= TOP BARANGAY (BY BUDGET USE) ================= */
+/* ================= BARANGAY DATA (FIXED) ================= */
 $stmt = $conn->prepare("
-    SELECT b.barangay_name,
-           COALESCE(SUM(bu.budget_used),0) AS used
+    SELECT 
+        b.id,
+        b.barangay_name,
+
+        COALESCE(SUM(a.participants),0) AS total_participants,
+        COUNT(a.id) AS total_activities,
+
+        COALESCE(bu.total_amount,0) AS annual_budget,
+        COALESCE(SUM(a.allocated_budget),0) AS budget_used,
+
+        (COALESCE(bu.total_amount,0) - COALESCE(SUM(a.allocated_budget),0)) AS remaining
+
     FROM barangays b
-    LEFT JOIN budgets bu ON b.id = bu.barangay_id
-    GROUP BY b.id
-    ORDER BY used DESC
-    LIMIT 1
-");
-$stmt->execute();
-$topBarangay = $stmt->fetch(PDO::FETCH_ASSOC);
+    LEFT JOIN activities a ON b.id = a.barangay_id
+    LEFT JOIN budgets bu ON bu.barangay_id = b.id
 
-/* ================= BUDGET UTILIZATION ================= */
-$stmt = $conn->prepare("
-    SELECT barangay_id,
-           SUM(annual_budget) AS total_budget,
-           SUM(budget_used) AS used
-    FROM budgets
-    GROUP BY barangay_id
+    GROUP BY b.id, b.barangay_name, bu.total_amount
+    ORDER BY total_participants DESC
 ");
 $stmt->execute();
-$chart = $stmt->fetchAll(PDO::FETCH_ASSOC);
+$data = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-/* ================= AUDIT FEED ================= */
-$stmt = $conn->prepare("
-    SELECT a.action, a.created_at, u.username
-    FROM audit_logs a
-    LEFT JOIN users u ON u.id = a.user_id
-    ORDER BY a.created_at DESC
-    LIMIT 8
-");
-$stmt->execute();
-$logs = $stmt->fetchAll(PDO::FETCH_ASSOC);
+/* ================= ML SCORE ================= */
+function mlScore($d) {
+
+    $participants = $d['total_participants'];
+    $activities = $d['total_activities'];
+    $budgetUsed = $d['budget_used'];
+    $budget = $d['annual_budget'] ?: 1;
+
+    $efficiency = ($budgetUsed > 0) ? ($participants / $budgetUsed) : 0;
+    $budgetRatio = $budgetUsed / $budget;
+
+    $score = (
+        ($efficiency * 50) +
+        ($activities * 10) +
+        ($budgetRatio * 40)
+    );
+
+    return min(100, round($score, 2));
+}
+
+/* ================= APPLY ML ================= */
+foreach ($data as $i => $d) {
+    $data[$i]['ml_score'] = mlScore($d);
+}
+
+/* ================= TOP BARANGAY ================= */
+usort($data, fn($a,$b) => $b['ml_score'] <=> $a['ml_score']);
+
+$topBarangay = $data[0]['barangay_name'] ?? "N/A";
+$topScore = $data[0]['ml_score'] ?? 0;
+
+/* ================= SYSTEM ML ================= */
+$avgML = count($data) > 0
+    ? array_sum(array_column($data, 'ml_score')) / count($data)
+    : 0;
+
+$mlScore = round($avgML, 2);
+
+if ($mlScore >= 70) {
+    $mlStatus = "HIGH SYSTEM ENGAGEMENT";
+    $mlColor = "green";
+    $mlInsight = "Barangays are highly active and efficient.";
+} elseif ($mlScore >= 40) {
+    $mlStatus = "MODERATE ENGAGEMENT";
+    $mlColor = "orange";
+    $mlInsight = "Some barangays need improvement.";
+} else {
+    $mlStatus = "LOW ENGAGEMENT";
+    $mlColor = "red";
+    $mlInsight = "System activity is weak.";
+}
 ?>
 
 <!DOCTYPE html>
 <html>
 <head>
-<title>System Admin Dashboard</title>
+<title>Admin Dashboard</title>
 
 <link rel="stylesheet" href="../assets/style.css">
 <link rel="stylesheet" href="../assets/sbstyle.css">
+
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <style>
-.grid {
+.grid{
     display:grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns:repeat(4,1fr);
     gap:15px;
 }
 
-.card {
+.card{
     padding:20px;
-    background:rgba(255,255,255,0.2);
-    backdrop-filter:blur(10px);
-    border-radius:12px;
     text-align:center;
 }
 
-.section {
-    margin-top:20px;
-    padding:20px;
-    background:rgba(255,255,255,0.2);
-    backdrop-filter:blur(15px);
-    border-radius:12px;
-}
-
 table {
-    width:100%;
-    border-collapse:collapse;
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
 }
 
 th {
-    background:#2d89ef;
-    color:white;
-    padding:10px;
+    background: #dc3545;
+    color: white;
+    padding: 10px;
 }
 
 td {
-    padding:10px;
-    border-bottom:1px solid #ddd;
+    padding: 10px;
+    border-bottom: 1px solid #ddd;
+    text-align: center;
+}
+
+.glass {
+    background: rgba(255,255,255,0.2);
+    backdrop-filter: blur(500px);
+    border-radius: 15px;
+    padding: 20px;
+}
+
+.ml-box {
+    border-left: 6px solid;
 }
 </style>
 </head>
@@ -120,65 +156,73 @@ td {
 <div class="main">
 
     <div class="header">
-        <h2>🛡 System Admin Dashboard</h2>
+        <h2>📊 Barangay AI Performance Dashboard</h2>
     </div>
 
-    <!-- KPI -->
+    <!-- KPI GRID -->
     <div class="grid">
 
-        <div class="card">
+        <div class="glass card">
             <h3>Barangays</h3>
             <h2><?= $totalBarangays ?></h2>
         </div>
 
-        <div class="card">
-            <h3>Approved Users</h3>
+        <div class="glass card">
+            <h3>Users</h3>
             <h2><?= $totalUsers ?></h2>
         </div>
 
-        <div class="card">
-            <h3>Total Budget</h3>
-            <h2>₱ <?= number_format($totalBudget) ?></h2>
+        <div class="glass card">
+            <h3>Pending</h3>
+            <h2><?= $pendingUsers ?></h2>
         </div>
 
-        <div class="card">
-            <h3>Approved Projects</h3>
-            <h2><?= $totalProjects ?></h2>
+        <div class="glass card">
+            <h3>Activities</h3>
+            <h2><?= $totalActivities ?></h2>
         </div>
 
     </div>
 
-    <!-- TOP BARANGAY -->
-    <div class="section">
-        <h3>🏆 Top Performing Barangay</h3>
-        <p>
-            <b><?= $topBarangay['barangay_name'] ?? 'N/A' ?></b>
-            (Budget Used: ₱ <?= number_format($topBarangay['used'] ?? 0) ?>)
-        </p>
+    <!-- ML INSIGHT -->
+    <div class="glass ml-box" style="border-color:<?= $mlColor ?>;">
+        <h3>🤖 AI Insight</h3>
+        <p><b>Status:</b> <?= $mlStatus ?></p>
+        <p><b>System ML Score:</b> <?= $mlScore ?>%</p>
+        <p><b>Top Barangay:</b> <?= $topBarangay ?> (<?= $topScore ?>%)</p>
+        <p><?= $mlInsight ?></p>
     </div>
 
-    <!-- CHART -->
-    <div class="section">
-        <h3>📊 Budget Utilization</h3>
-        <canvas id="chart"></canvas>
+    <!-- GRAPH -->
+    <div class="glass">
+        <h3>📈 ML Performance Graph</h3>
+        <canvas id="mlChart"></canvas>
     </div>
 
-    <!-- AUDIT -->
-    <div class="section">
-        <h3>📜 Live Audit Activity</h3>
+    <!-- TABLE -->
+    <div class="glass">
+        <h3>📊 Barangay Analytics</h3>
 
         <table>
             <tr>
-                <th>User</th>
-                <th>Action</th>
-                <th>Time</th>
+                <th>Barangay</th>
+                <th>Participants</th>
+                <th>Activities</th>
+                <th>Annual Budget</th>
+                <th>Budget Used</th>
+                <th>Remaining</th>
+                <th>ML Score</th>
             </tr>
 
-            <?php foreach ($logs as $l) { ?>
+            <?php foreach($data as $d){ ?>
             <tr>
-                <td><?= $l['username'] ?? 'System' ?></td>
-                <td><?= $l['action'] ?></td>
-                <td><?= $l['created_at'] ?></td>
+                <td><?= htmlspecialchars($d['barangay_name']) ?></td>
+                <td><?= $d['total_participants'] ?></td>
+                <td><?= $d['total_activities'] ?></td>
+                <td>₱<?= number_format($d['annual_budget'],2) ?></td>
+                <td>₱<?= number_format($d['budget_used'],2) ?></td>
+                <td>₱<?= number_format($d['remaining'],2) ?></td>
+                <td><b><?= $d['ml_score'] ?>%</b></td>
             </tr>
             <?php } ?>
 
@@ -187,15 +231,29 @@ td {
 
 </div>
 
+<!-- GRAPH SCRIPT -->
 <script>
-new Chart(document.getElementById('chart'), {
+const labels = <?= json_encode(array_column($data, 'barangay_name')) ?>;
+const scores = <?= json_encode(array_column($data, 'ml_score')) ?>;
+
+new Chart(document.getElementById('mlChart'), {
     type: 'bar',
     data: {
-        labels: <?= json_encode(array_column($chart,'barangay_id')) ?>,
+        labels: labels,
         datasets: [{
-            label: 'Budget Usage',
-            data: <?= json_encode(array_column($chart,'used')) ?>
+            label: 'ML Score (%)',
+            data: scores,
+            borderWidth: 1
         }]
+    },
+    options: {
+        responsive: true,
+        scales: {
+            y: {
+                beginAtZero: true,
+                max: 100
+            }
+        }
     }
 });
 </script>
