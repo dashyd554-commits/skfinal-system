@@ -7,6 +7,7 @@
         <a href="admin_dashboard.php">🏠 <span>Dashboard</span></a>
         <a href="admin_users.php">👥 <span>Manage Users</span></a>
         <a href="admin_pending.php">⏳ <span>Pending Approval</span></a>
+        <a href="admin_audit_log.php">🕘 <span> Audit Logs</span></a>
 
     <?php } elseif (isset($_SESSION['user']) && $_SESSION['user']['role'] === 'chairman') { ?>
 
