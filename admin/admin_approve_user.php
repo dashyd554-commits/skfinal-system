@@ -54,6 +54,6 @@ $stmt->execute([
 ]);
 
 /* ================= REDIRECT ================= */
-header("Location: admin_users.php");
+header("Location: admin_pending.php");
 exit();
 ?>
