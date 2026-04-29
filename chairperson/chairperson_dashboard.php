@@ -8,10 +8,10 @@ if (!isset($_SESSION['user']) || $_SESSION['user']['role'] != 'chairman') {
 }
 
 /* ==================== PRESENT BUDGET ==================== */
-$stmt = $conn->prepare("SELECT amount FROM budgets ORDER BY id DESC LIMIT 1");
+$stmt = $conn->prepare("SELECT total_amount FROM budgets ORDER BY id DESC LIMIT 1");
 $stmt->execute();
 $budgetData = $stmt->fetch(PDO::FETCH_ASSOC);
-$totalBudget = $budgetData['amount'] ?? 0;
+$totalBudget = $budgetData['total_amount'] ?? 0;
 
 /* ==================== ACTIVITIES ==================== */
 $stmt = $conn->prepare("SELECT COUNT(*) AS total_projects FROM activities");
