@@ -7,132 +7,61 @@ if (!isset($_SESSION['user']) || $_SESSION['user']['role'] != 'treasurer') {
     exit();
 }
 
-/* ================= BARANGAY ID ================= */
 $barangay_id = $_SESSION['user']['barangay_id'];
+$treasurer_id = $_SESSION['user']['id'];
 
-/* ================= PRESENT ANNUAL BUDGET (FILTERED) ================= */
+/* ================= CURRENT BUDGET ================= */
 $stmt = $conn->prepare("
-    SELECT year, total_amount 
-    FROM budgets 
-    WHERE barangay_id = :barangay_id
-    ORDER BY year DESC 
-    LIMIT 1
+    SELECT * FROM budgets
+    WHERE barangay_id = :bid
+    ORDER BY year DESC LIMIT 1
 ");
+$stmt->execute([':bid' => $barangay_id]);
+$budget = $stmt->fetch(PDO::FETCH_ASSOC);
 
-$stmt->execute([
-    ':barangay_id' => $barangay_id
-]);
+$total_budget = $budget['annual_budget'] ?? 0;
+$used_budget = $budget['budget_used'] ?? 0;
+$remaining_budget = $budget['remaining_budget'] ?? ($total_budget - $used_budget);
 
-$current = $stmt->fetch(PDO::FETCH_ASSOC);
-
-$currentYear = $current['year'] ?? 'N/A';
-$currentBudget = $current['total_amount'] ?? 0;
-
-/* ================= YEARLY DATA (FILTERED) ================= */
+/* ================= APPROVED DISBURSEMENTS ================= */
 $stmt = $conn->prepare("
-    SELECT year, total_amount 
-    FROM budgets 
-    WHERE barangay_id = :barangay_id
-    ORDER BY year ASC
+    SELECT COALESCE(SUM(amount),0) as total
+    FROM budget_transactions
+    WHERE barangay_id = :bid
 ");
+$stmt->execute([':bid' => $barangay_id]);
+$spent = $stmt->fetch(PDO::FETCH_ASSOC)['total'] ?? 0;
 
-$stmt->execute([
-    ':barangay_id' => $barangay_id
-]);
+/* ================= PENDING PROJECTS ================= */
+$stmt = $conn->prepare("
+    SELECT * FROM projects
+    WHERE barangay_id = :bid
+    AND status = 'pending_treasurer'
+");
+$stmt->execute([':bid' => $barangay_id]);
+$pending = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-$years = [];
-$amounts = [];
+/* ================= REJECTED COUNT ================= */
+$stmt = $conn->prepare("
+    SELECT COUNT(*) FROM projects
+    WHERE barangay_id = :bid
+    AND status = 'rejected'
+");
+$stmt->execute([':bid' => $barangay_id]);
+$rejected = $stmt->fetchColumn();
 
-while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-    $years[] = $row['year'];
-    $amounts[] = $row['total_amount'];
-}
-
-/* ================= ML ANALYSIS ================= */
-$trend = "stable";
-$mlInsight = "Not enough data for prediction.";
-$mlScore = 0;
-
-if (count($amounts) >= 2) {
-
-    $last = $amounts[count($amounts) - 1];
-    $prev = $amounts[count($amounts) - 2];
-
-    if ($last > $prev) {
-        $trend = "up";
-        $mlInsight = "Budget trend is increasing. Strong financial performance detected.";
-        $mlScore = 85;
-    } elseif ($last < $prev) {
-        $trend = "down";
-        $mlInsight = "Budget trend is decreasing. Review funding sources.";
-        $mlScore = 40;
-    } else {
-        $trend = "stable";
-        $mlInsight = "Budget is stable. Maintain current strategy.";
-        $mlScore = 60;
-    }
-}
-
-/* ================= FORECAST ================= */
-$forecast = $currentBudget;
-
-if ($trend == "up") {
-    $forecast = $currentBudget * 1.10;
-} elseif ($trend == "down") {
-    $forecast = $currentBudget * 0.90;
-}
 ?>
 
 <!DOCTYPE html>
 <html>
 <head>
 <title>Treasurer Dashboard</title>
-
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
 <link rel="stylesheet" href="../assets/style.css">
-<link rel="stylesheet" href="../assets/sbstyle.css">
 
 <style>
-.grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 15px;
-}
-
-.card {
-    padding: 20px;
-    text-align: center;
-}
-
-.badge {
-    display:inline-block;
-    padding:5px 10px;
-    border-radius:8px;
-    color:white;
-    font-size:12px;
-}
-
-.up { background:green; }
-.down { background:red; }
-.stable { background:gray; }
-
-@media (max-width: 768px) {
-    .grid {
-        grid-template-columns: 1fr;
-    }
-}
-
-.glass {
-    background: rgba(255,255,255,0.2);
-    backdrop-filter: blur(500px);
-    border-radius: 15px;
-    padding: 20px;
-}
+.card { padding:20px; background:white; margin:10px; border-radius:10px; }
+.grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
 </style>
-
 </head>
 
 <body>
@@ -141,67 +70,41 @@ if ($trend == "up") {
 
 <div class="main">
 
-<div class="header">
-    <h2>💰 Treasurer Dashboard (ML Enhanced)</h2>
-    <p>Financial monitoring with predictive insights</p>
-</div>
+<h2>💰 Treasurer Dashboard</h2>
 
-<!-- KPI CARDS -->
 <div class="grid">
 
-    <div class="glass card">
-        <h3>📅 Present Year</h3>
-        <h2><?= $currentYear ?></h2>
-    </div>
-
-    <div class="glass card">
-        <h3>💰 Current Budget</h3>
-        <h2>₱ <?= number_format($currentBudget) ?></h2>
-    </div>
-
-    <div class="glass card">
-        <h3>📊 Trend</h3>
-        <span class="badge <?= $trend ?>">
-            <?= strtoupper($trend) ?>
-        </span>
-    </div>
-
+<div class="card">
+<h3>Annual Budget</h3>
+<p>₱ <?= number_format($total_budget) ?></p>
 </div>
 
-<!-- CHART -->
-<div class="glass" style="margin-top:20px;">
-    <h3>📊 Budget History</h3>
-    <canvas id="chart"></canvas>
+<div class="card">
+<h3>Remaining Budget</h3>
+<p>₱ <?= number_format($remaining_budget) ?></p>
 </div>
 
-<!-- ML INSIGHT -->
-<div class="glass" style="margin-top:20px;">
-    <h3>🤖 ML Insight</h3>
-    <p><?= htmlspecialchars($mlInsight) ?></p>
-    <p><b>ML Score:</b> <?= $mlScore ?>%</p>
+<div class="card">
+<h3>Total Spent</h3>
+<p>₱ <?= number_format($spent) ?></p>
 </div>
 
-<!-- FORECAST -->
-<div class="glass" style="margin-top:20px;">
-    <h3>📈 Forecast</h3>
-    <p>Projected Next Budget:</p>
-    <h2>₱ <?= number_format($forecast) ?></h2>
+<div class="card">
+<h3>Rejected Proposals</h3>
+<p><?= $rejected ?></p>
 </div>
 
 </div>
 
-<script>
-new Chart(document.getElementById('chart'), {
-    type: 'line',
-    data: {
-        labels: <?= json_encode($years) ?>,
-        datasets: [{
-            label: 'Budget',
-            data: <?= json_encode($amounts) ?>
-        }]
-    }
-});
-</script>
+<h3>📌 Pending Approval</h3>
 
+<?php foreach($pending as $p){ ?>
+<div class="card">
+    <b><?= htmlspecialchars($p['name']) ?></b><br>
+    Budget: ₱<?= number_format($p['budget_requested']) ?>
+</div>
+<?php } ?>
+
+</div>
 </body>
 </html>
