@@ -39,6 +39,7 @@ function normalizeScore($score){
     return round($score,2);
 }
 
+
 /* ================= PROCESS ML ================= */
 if(!empty($results)){
 

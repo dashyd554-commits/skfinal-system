@@ -24,20 +24,30 @@ def load_data():
         query = """
         SELECT 
             COALESCE(participants,0) AS participants,
-            COALESCE(budget,1) AS budget,
-            COALESCE(status,'pending') AS status
+            COALESCE(allocated_budget,1) AS budget,
+            COALESCE(evaluation_score,0) AS evaluation_score,
+            COALESCE(status,'planned') AS status
         FROM activities
+        LIMIT 200
         """
 
         df = pd.read_sql_query(query, conn)
         conn.close()
 
-        # CLEAN DATA
+        if df.empty:
+            return df
+
+        # ================= CLEAN DATA =================
         df["participants"] = pd.to_numeric(df["participants"], errors="coerce").fillna(0)
         df["budget"] = pd.to_numeric(df["budget"], errors="coerce").fillna(1)
+        df["evaluation_score"] = pd.to_numeric(df["evaluation_score"], errors="coerce").fillna(0)
 
-        # FEATURE ENGINEERING
-        df["efficiency"] = df["participants"] / df["budget"]
+        # prevent divide-by-zero + extreme values
+        df["budget"] = df["budget"].apply(lambda x: max(x, 100))
+
+        # ================= FEATURES =================
+        df["efficiency"] = df["participants"] / (df["budget"] + 1)
+        df["quality"] = df["evaluation_score"] / 100
 
         return df
 
@@ -47,19 +57,24 @@ def load_data():
 
 # ================= TRAIN MODEL =================
 def train_model(df):
-    X = df[["participants", "budget", "efficiency"]]
+    if df is None or df.empty:
+        return None
 
-    # TARGET = efficiency-based learning (stable + meaningful)
-    y = df["efficiency"] * 100
+    X = df[["participants", "budget", "efficiency", "quality"]]
+
+    # stable target (NO EXPLOSION)
+    y = (
+        df["efficiency"] * 50 +
+        df["quality"] * 50
+    )
 
     model = RandomForestRegressor(
-        n_estimators=100,
-        max_depth=8,
+        n_estimators=120,
+        max_depth=10,
         random_state=42
     )
 
     model.fit(X, y)
-
     return model
 
 # ================= HOME =================
@@ -75,38 +90,51 @@ def predict():
 
         if df.empty:
             return jsonify({
-                "error": "No data found in activities table"
+                "error": "No data found in activities table",
+                "hint": "Check table or insert data"
             }), 400
 
         model = train_model(df)
 
-        X = df[["participants", "budget", "efficiency"]]
+        if model is None:
+            return jsonify({
+                "error": "Model training failed"
+            }), 500
+
+        X = df[["participants", "budget", "efficiency", "quality"]]
+
         df["score"] = model.predict(X)
 
-        avg_score = float(df["score"].mean())
+        # ================= SAFE NORMALIZATION =================
+        avg_score = float(df["score"].clip(0, 100).mean())
 
-        # ================= INTELLIGENT CLASSIFICATION =================
+        # ================= CLASSIFICATION =================
         if avg_score >= 75:
             category = "High Performing Barangay"
-            recommendation = "Scale programs and increase budget allocation"
+            recommendation = "Scale successful programs and increase funding"
         elif avg_score >= 50:
             category = "Moderate Performance"
-            recommendation = "Optimize project execution and participation"
+            recommendation = "Optimize participation and improve execution"
         else:
             category = "Low Performance Barangay"
-            recommendation = "Improve planning, outreach, and engagement"
+            recommendation = "Revise planning and increase community engagement"
 
         return jsonify({
             "category": category,
             "success_probability": round(avg_score / 100, 2),
             "budget_efficiency_score": round(avg_score, 2),
             "recommendation": recommendation,
-            "total_records": len(df)
+            "total_records": len(df),
+            "debug": {
+                "mean_score": round(avg_score, 2),
+                "rows_used": len(df)
+            }
         })
 
     except Exception as e:
         return jsonify({
-            "error": str(e)
+            "error": str(e),
+            "hint": "Check DB connection or schema"
         }), 500
 
 # ================= RUN =================
