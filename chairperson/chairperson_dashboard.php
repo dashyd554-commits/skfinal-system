@@ -12,7 +12,7 @@ $user_id = $_SESSION['user']['id'];
 
 /* ================= TOTAL PROPOSALS ================= */
 $stmt = $conn->prepare("
-    SELECT COUNT(*) AS total
+    SELECT COUNT(*) 
     FROM projects
     WHERE barangay_id = :bid AND created_by = :uid
 ");
@@ -42,7 +42,7 @@ $rejected = $stmt->fetchColumn();
 /* ================= PENDING ================= */
 $pending = $totalProposals - ($approved + $rejected);
 
-/* ================= BUDGET REQUESTED ================= */
+/* ================= BUDGET ================= */
 $stmt = $conn->prepare("
     SELECT COALESCE(SUM(budget_requested),0)
     FROM projects
@@ -51,17 +51,32 @@ $stmt = $conn->prepare("
 $stmt->execute([':bid' => $barangay_id, ':uid' => $user_id]);
 $totalBudgetRequested = $stmt->fetchColumn();
 
-/* ================= ML SCORE ================= */
-if ($totalProposals > 0) {
-    $approvalRate = $approved / $totalProposals;
-    $rejectionRate = $rejected / $totalProposals;
+/* ================= ML API CALL ================= */
+$ml_data = null;
 
-    $mlScore = ($approvalRate * 70) + ((1 - $rejectionRate) * 30);
-} else {
-    $mlScore = 0;
+$payload = json_encode([
+    "barangay_id" => $barangay_id,
+    "total" => $totalProposals,
+    "approved" => $approved,
+    "rejected" => $rejected,
+    "pending" => $pending
+]);
+
+$ch = curl_init("https://skmanagementsys.onrender.com/predict");
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($ch, CURLOPT_POST, true);
+curl_setopt($ch, CURLOPT_HTTPHEADER, [
+    "Content-Type: application/json"
+]);
+curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
+
+$response = curl_exec($ch);
+$http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+curl_close($ch);
+
+if ($http_code == 200 && $response) {
+    $ml_data = json_decode($response, true);
 }
-
-$mlScore = round(min(100, $mlScore), 2);
 
 /* ================= TREND ================= */
 $stmt = $conn->prepare("
@@ -99,62 +114,49 @@ body{
     background-size:cover;
 }
 
-/* MAIN AREA */
 .main{
     margin-left:190px;
     padding:20px;
     width:calc(100% - 200px);
 }
 
-/* HEADER */
 h2{
-    color:#1e3c72;
-}
-
-/* GRID FIXED */
-.grid{
-    display:grid;
-    grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));
-    gap:15px;
+    color:white;
+    text-align:center;
     margin-bottom:20px;
 }
 
-/* CARD STYLE */
+.grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(200px,1fr));
+    gap:15px;
+}
+
 .card{
     background:rgba(255,255,255,0.55);
     backdrop-filter:blur(18px);
     border-radius:15px;
     padding:20px;
     text-align:center;
-    box-shadow:0 8px 20px rgba(0,0,0,0.08);
-    transition:0.2s;
 }
 
-.card:hover{
-    transform:translateY(-3px);
+.card h3{margin:0;color:#555;}
+.card h2{margin-top:10px;color:#1e3c72;}
+
+.ml-box{
+    background:rgba(255,255,255,0.7);
+    padding:15px;
+    border-radius:12px;
+    margin-top:20px;
 }
 
-.card h3{
-    margin:0;
-    font-size:14px;
-    color:#555;
-}
-
-.card h2{
-    margin-top:10px;
-    color:#1e3c72;
-}
-
-/* CHART */
 .chart-box{
     background:rgba(255,255,255,0.5);
-    backdrop-filter:blur(18px);
     padding:20px;
     border-radius:15px;
-    box-shadow:0 8px 20px rgba(0,0,0,0.08);
+    margin-top:20px;
 }
 
-/* RESPONSIVE */
 @media(max-width:768px){
     .main{
         margin-left:70px;
@@ -170,7 +172,7 @@ h2{
 
 <div class="main">
 
-<h2>👑 Chairperson Dashboard</h2>
+<h2>👑 Chairperson Dashboard (AI Powered)</h2>
 
 <div class="grid">
 
@@ -195,17 +197,29 @@ h2{
     </div>
 
     <div class="card">
-        <h3>Total Budget Requested</h3>
+        <h3>Total Budget</h3>
         <h2>₱<?= number_format($totalBudgetRequested,2) ?></h2>
-    </div>
-
-    <div class="card">
-        <h3>AI Confidence</h3>
-        <h2><?= $mlScore ?>%</h2>
     </div>
 
 </div>
 
+<!-- ================= ML SECTION ================= -->
+<div class="ml-box">
+
+    <h3>🤖 AI / ML Analysis</h3>
+
+    <?php if ($ml_data): ?>
+        <p><b>Category:</b> <?= $ml_data['category'] ?></p>
+        <p><b>Success Probability:</b> <?= round($ml_data['success_probability'] * 100,2) ?>%</p>
+        <p><b>Budget Efficiency:</b> <?= $ml_data['budget_efficiency_score'] ?>%</p>
+        <p><b>Recommendation:</b> <?= $ml_data['recommendation'] ?></p>
+    <?php else: ?>
+        <p style="color:red;">ML service unavailable. Showing basic analytics only.</p>
+    <?php endif; ?>
+
+</div>
+
+<!-- ================= CHART ================= -->
 <div class="chart-box">
     <h3>📊 Proposal Trend</h3>
     <canvas id="chart"></canvas>
@@ -224,9 +238,6 @@ new Chart(document.getElementById('chart'), {
             borderWidth: 2,
             tension: 0.3
         }]
-    },
-    options: {
-        responsive: true
     }
 });
 </script>

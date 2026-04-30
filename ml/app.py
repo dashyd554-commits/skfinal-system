@@ -6,34 +6,38 @@ from sklearn.ensemble import RandomForestRegressor
 
 app = Flask(__name__)
 
-# ---------------- DB CONNECT ----------------
+# ================= DATABASE CONNECTION =================
 def get_connection():
     return psycopg2.connect(
-        host=os.getenv("DB_HOST"),
-        database=os.getenv("DB_NAME"),
-        user=os.getenv("DB_USER"),
-        password=os.getenv("DB_PASSWORD"),
+        host=os.getenv("DB_HOST", "dpg-d7ocp6a8qa3s73ahfb4g-a.ohio-postgres.render.com"),
+        database=os.getenv("DB_NAME", "sk_system"),
+        user=os.getenv("DB_USER", "sk_new"),
+        password=os.getenv("DB_PASSWORD", "bX9G8vuFr3DTrHIASqTOsK9qCZ6A4lfZ"),
         port=os.getenv("DB_PORT", "5432")
     )
 
-# ---------------- LOAD DATA ----------------
-def get_data():
+# ================= LOAD DATA =================
+def load_data():
     try:
         conn = get_connection()
 
         query = """
         SELECT 
-            title,
             COALESCE(participants,0) AS participants,
-            COALESCE(budget,1) AS budget
+            COALESCE(budget,1) AS budget,
+            COALESCE(status,'pending') AS status
         FROM activities
         """
 
         df = pd.read_sql_query(query, conn)
         conn.close()
 
+        # CLEAN DATA
         df["participants"] = pd.to_numeric(df["participants"], errors="coerce").fillna(0)
         df["budget"] = pd.to_numeric(df["budget"], errors="coerce").fillna(1)
+
+        # FEATURE ENGINEERING
+        df["efficiency"] = df["participants"] / df["budget"]
 
         return df
 
@@ -41,65 +45,71 @@ def get_data():
         print("DB ERROR:", e)
         return pd.DataFrame()
 
-# ---------------- TRAIN MODEL ----------------
+# ================= TRAIN MODEL =================
 def train_model(df):
-    if df.empty:
-        return None
+    X = df[["participants", "budget", "efficiency"]]
 
-    df["ratio"] = df["participants"] / df["budget"]
+    # TARGET = efficiency-based learning (stable + meaningful)
+    y = df["efficiency"] * 100
 
-    X = df[["participants", "budget", "ratio"]]
-    y = (df["participants"] * 0.7) + (df["ratio"] * 100)
+    model = RandomForestRegressor(
+        n_estimators=100,
+        max_depth=8,
+        random_state=42
+    )
 
-    model = RandomForestRegressor(n_estimators=50, random_state=42)
     model.fit(X, y)
 
     return model
 
-# ---------------- HOME ----------------
+# ================= HOME =================
 @app.route("/")
 def home():
-    return {"status": "ML API Running"}
+    return {"status": "ML API Running Successfully"}
 
-# ---------------- PREDICT (FIXED OUTPUT) ----------------
-@app.route("/predict", methods=["POST", "GET"])
+# ================= PREDICT =================
+@app.route("/predict", methods=["GET", "POST"])
 def predict():
     try:
-        df = get_data()
+        df = load_data()
+
+        if df.empty:
+            return jsonify({
+                "error": "No data found in activities table"
+            }), 400
 
         model = train_model(df)
 
-        if model is None:
-            return jsonify({"error": "No data found"}), 400
-
-        df["ratio"] = df["participants"] / df["budget"]
-
-        X = df[["participants", "budget", "ratio"]]
+        X = df[["participants", "budget", "efficiency"]]
         df["score"] = model.predict(X)
 
-        # 🎯 SIMPLE ML DECISION LOGIC
-        avg_score = df["score"].mean()
+        avg_score = float(df["score"].mean())
 
-        if avg_score > 80:
-            prediction = "High Performance Barangay"
-            recommendation = "Maintain or slightly increase budget"
-        elif avg_score > 50:
-            prediction = "Moderate Performance"
-            recommendation = "Improve project execution"
+        # ================= INTELLIGENT CLASSIFICATION =================
+        if avg_score >= 75:
+            category = "High Performing Barangay"
+            recommendation = "Scale programs and increase budget allocation"
+        elif avg_score >= 50:
+            category = "Moderate Performance"
+            recommendation = "Optimize project execution and participation"
         else:
-            prediction = "Low Performance"
-            recommendation = "Review project planning and funding"
+            category = "Low Performance Barangay"
+            recommendation = "Improve planning, outreach, and engagement"
 
         return jsonify({
-            "prediction": prediction,
-            "score": float(avg_score),
-            "recommendation": recommendation
+            "category": category,
+            "success_probability": round(avg_score / 100, 2),
+            "budget_efficiency_score": round(avg_score, 2),
+            "recommendation": recommendation,
+            "total_records": len(df)
         })
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({
+            "error": str(e)
+        }), 500
 
-# ---------------- RUN ----------------
+# ================= RUN =================
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
