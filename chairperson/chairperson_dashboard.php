@@ -42,7 +42,7 @@ $rejected = $stmt->fetchColumn();
 /* ================= PENDING ================= */
 $pending = $totalProposals - ($approved + $rejected);
 
-/* ================= BUDGET ================= */
+/* ================= TOTAL BUDGET ================= */
 $stmt = $conn->prepare("
     SELECT COALESCE(SUM(budget_requested),0)
     FROM projects
@@ -51,27 +51,22 @@ $stmt = $conn->prepare("
 $stmt->execute([':bid' => $barangay_id, ':uid' => $user_id]);
 $totalBudgetRequested = $stmt->fetchColumn();
 
-/* ================= ML API CALL ================= */
+/* ================= ML API CALL (FIXED - GET ONLY) ================= */
 $ml_data = null;
 
-$payload = json_encode([
-    "barangay_id" => $barangay_id,
-    "total" => $totalProposals,
-    "approved" => $approved,
-    "rejected" => $rejected,
-    "pending" => $pending
-]);
-
 $ch = curl_init("https://skmanagementsys.onrender.com/predict");
+
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-curl_setopt($ch, CURLOPT_POST, true);
-curl_setopt($ch, CURLOPT_HTTPHEADER, [
-    "Content-Type: application/json"
-]);
-curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
+curl_setopt($ch, CURLOPT_HTTPGET, true);
+curl_setopt($ch, CURLOPT_TIMEOUT, 30);
 
 $response = curl_exec($ch);
 $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+
+if (curl_errno($ch)) {
+    error_log("CURL ERROR: " . curl_error($ch));
+}
+
 curl_close($ch);
 
 if ($http_code == 200 && $response) {
@@ -144,7 +139,7 @@ h2{
 .card h2{margin-top:10px;color:#1e3c72;}
 
 .ml-box{
-    background:rgba(255,255,255,0.7);
+    background:rgba(255,255,255,0.75);
     padding:15px;
     border-radius:12px;
     margin-top:20px;
@@ -174,6 +169,7 @@ h2{
 
 <h2>👑 Chairperson Dashboard (AI Powered)</h2>
 
+<!-- ================= CARDS ================= -->
 <div class="grid">
 
     <div class="card">
@@ -208,13 +204,30 @@ h2{
 
     <h3>🤖 AI / ML Analysis</h3>
 
-    <?php if ($ml_data): ?>
-        <p><b>Category:</b> <?= $ml_data['category'] ?></p>
-        <p><b>Success Probability:</b> <?= round($ml_data['success_probability'] * 100,2) ?>%</p>
-        <p><b>Budget Efficiency:</b> <?= $ml_data['budget_efficiency_score'] ?>%</p>
-        <p><b>Recommendation:</b> <?= $ml_data['recommendation'] ?></p>
+    <?php if ($ml_data && isset($ml_data['budget_efficiency_score'])): ?>
+
+        <p><b>Category:</b> <?= $ml_data['category'] ?? 'N/A' ?></p>
+
+        <p><b>Success Probability:</b>
+            <?= isset($ml_data['success_probability']) 
+                ? round($ml_data['success_probability'] * 100, 2) . '%' 
+                : 'N/A' ?>
+        </p>
+
+        <p><b>Budget Efficiency Score:</b>
+            <?= $ml_data['budget_efficiency_score'] ?? 'N/A' ?>%
+        </p>
+
+        <p><b>Recommendation:</b>
+            <?= $ml_data['recommendation'] ?? 'No recommendation' ?>
+        </p>
+
     <?php else: ?>
-        <p style="color:red;">ML service unavailable. Showing basic analytics only.</p>
+
+        <p style="color:red;">
+            🤖 ML service unavailable. Showing basic analytics only.
+        </p>
+
     <?php endif; ?>
 
 </div>
