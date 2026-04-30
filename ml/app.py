@@ -6,7 +6,7 @@ from sklearn.ensemble import RandomForestRegressor
 
 app = Flask(__name__)
 
-# ---------------- SAFE DB CONNECT FUNCTION ----------------
+# ---------------- DB CONNECT ----------------
 def get_connection():
     return psycopg2.connect(
         host=os.getenv("DB_HOST"),
@@ -25,7 +25,7 @@ def get_data():
         SELECT 
             title,
             COALESCE(participants,0) AS participants,
-            1 AS budget
+            COALESCE(budget,1) AS budget
         FROM activities
         """
 
@@ -38,7 +38,7 @@ def get_data():
         return df
 
     except Exception as e:
-        print("DATABASE ERROR:", e)
+        print("DB ERROR:", e)
         return pd.DataFrame()
 
 # ---------------- TRAIN MODEL ----------------
@@ -54,37 +54,52 @@ def train_model(df):
     model = RandomForestRegressor(n_estimators=50, random_state=42)
     model.fit(X, y)
 
-    return model, df
+    return model
 
 # ---------------- HOME ----------------
 @app.route("/")
 def home():
-    return {"status": "ML API Running on Render"}
+    return {"status": "ML API Running"}
 
-# ---------------- PREDICT ----------------
-@app.route("/predict")
+# ---------------- PREDICT (FIXED OUTPUT) ----------------
+@app.route("/predict", methods=["POST", "GET"])
 def predict():
     try:
         df = get_data()
 
-        result = train_model(df)
+        model = train_model(df)
 
-        if result is None:
-            return jsonify({"error": "No data found in activities table"}), 400
-
-        model, df = result
+        if model is None:
+            return jsonify({"error": "No data found"}), 400
 
         df["ratio"] = df["participants"] / df["budget"]
-        X = df[["participants", "budget", "ratio"]]
 
+        X = df[["participants", "budget", "ratio"]]
         df["score"] = model.predict(X)
 
-        return jsonify(df.to_dict(orient="records"))
+        # 🎯 SIMPLE ML DECISION LOGIC
+        avg_score = df["score"].mean()
+
+        if avg_score > 80:
+            prediction = "High Performance Barangay"
+            recommendation = "Maintain or slightly increase budget"
+        elif avg_score > 50:
+            prediction = "Moderate Performance"
+            recommendation = "Improve project execution"
+        else:
+            prediction = "Low Performance"
+            recommendation = "Review project planning and funding"
+
+        return jsonify({
+            "prediction": prediction,
+            "score": float(avg_score),
+            "recommendation": recommendation
+        })
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# ---------------- RUN APP ----------------
+# ---------------- RUN ----------------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)

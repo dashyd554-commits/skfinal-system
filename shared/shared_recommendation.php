@@ -9,32 +9,9 @@ if (!isset($_SESSION['user'])) {
 
 $barangay_id = $_SESSION['user']['barangay_id'];
 
-/* ================= TOP PROJECT TYPES ================= */
-$stmt = $conn->prepare("
-    SELECT 
-        name,
-        COUNT(*) AS total,
-        SUM(CASE WHEN status='approved' THEN 1 ELSE 0 END) AS approved
-    FROM projects
-    WHERE barangay_id = :barangay_id
-    GROUP BY name
-    ORDER BY approved DESC
-");
-$stmt->execute([':barangay_id' => $barangay_id]);
-$types = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-/* ================= BUDGET USAGE ================= */
-$stmt = $conn->prepare("
-    SELECT COALESCE(SUM(bt.amount),0) AS total_used
-    FROM budget_transactions bt
-    WHERE bt.barangay_id = :barangay_id
-");
-$stmt->execute([':barangay_id' => $barangay_id]);
-$budget = $stmt->fetch(PDO::FETCH_ASSOC);
-
 /* ================= TOTAL BUDGET ================= */
 $stmt = $conn->prepare("
-    SELECT total_amount
+    SELECT COALESCE(total_amount,0)
     FROM budgets
     WHERE barangay_id = :barangay_id
     ORDER BY id DESC
@@ -43,10 +20,19 @@ $stmt = $conn->prepare("
 $stmt->execute([':barangay_id' => $barangay_id]);
 $totalBudget = $stmt->fetchColumn() ?: 0;
 
+/* ================= USED BUDGET ================= */
+$stmt = $conn->prepare("
+    SELECT COALESCE(SUM(amount),0) AS total_used
+    FROM budget_transactions
+    WHERE barangay_id = :barangay_id
+");
+$stmt->execute([':barangay_id' => $barangay_id]);
+$budget = $stmt->fetch(PDO::FETCH_ASSOC);
+
 $used = $budget['total_used'] ?? 0;
 $ratio = ($totalBudget > 0) ? ($used / $totalBudget) * 100 : 0;
 
-/* ================= AI LOGIC ================= */
+/* ================= FALLBACK AI LOGIC ================= */
 if ($ratio >= 80) {
     $insight = "High budget utilization. Barangay is highly active.";
     $recommendation = "Maintain funding level or optimize spending.";
@@ -56,6 +42,32 @@ if ($ratio >= 80) {
 } else {
     $insight = "Low budget utilization.";
     $recommendation = "Improve project execution before increasing budget.";
+}
+
+/* ================= ML API INTEGRATION ================= */
+$ml_result = null;
+
+$ml_payload = json_encode([
+    "barangay_id" => $barangay_id,
+    "total_budget" => $totalBudget,
+    "used_budget" => $used,
+    "utilization" => $ratio
+]);
+
+$ch = curl_init("https://skmanagementsys.onrender.com/predict"); // your ML API
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($ch, CURLOPT_POST, true);
+curl_setopt($ch, CURLOPT_HTTPHEADER, [
+    'Content-Type: application/json'
+]);
+curl_setopt($ch, CURLOPT_POSTFIELDS, $ml_payload);
+
+$response = curl_exec($ch);
+$http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+curl_close($ch);
+
+if ($http_code == 200 && $response) {
+    $ml_result = json_decode($response, true);
 }
 ?>
 
@@ -68,22 +80,54 @@ if ($ratio >= 80) {
 <link rel="stylesheet" href="../assets/sbstyle.css">
 
 <style>
-    h3{
-    margin-left:190px;   /* moved dashboard 30px to left */
-    padding:20px;
+body{
+    margin:0;
+    background:#f4f6f9;
+}
+
+.main{
+    margin-left:190px;
+    padding:25px;
     width:calc(100% - 200px);
-    overflow-x:hidden;
-    background:rgba(255,255,255,0.55);
-    backdrop-filter:blur(500px);
-    }
-    p{
-        margin-left:190px;   /* moved dashboard 30px to left */
+}
+
+.card{
+    background:rgba(255,255,255,0.8);
+    backdrop-filter:blur(12px);
+    border-radius:12px;
     padding:20px;
-    width:calc(100% - 200px);
-    overflow-x:hidden;
-    background:rgba(255,255,255,0.55);
-    backdrop-filter:blur(500px);
+    margin-bottom:20px;
+    box-shadow:0 5px 15px rgba(0,0,0,0.1);
+}
+
+h2{
+    text-align:center;
+    color:#1e3c72;
+}
+
+h3{
+    margin-bottom:10px;
+    color:#333;
+}
+
+p{
+    margin:5px 0;
+    font-size:15px;
+}
+
+.ml-box{
+    background:#e8f4ff;
+    border-left:5px solid #1e3c72;
+    padding:15px;
+    border-radius:10px;
+}
+
+@media(max-width:768px){
+    .main{
+        margin-left:70px;
+        width:calc(100% - 80px);
     }
+}
 </style>
 
 </head>
@@ -91,22 +135,41 @@ if ($ratio >= 80) {
 
 <?php include '../assets/sidebar.php'; ?>
 
-<div style="margin-left:200px;padding:20px; ">
+<div class="main">
 
-<h2>🤖 AI Recommendation (Per Barangay)</h2>
+<h2>🤖 AI + ML Recommendation System</h2>
 
-<h3>💰 Budget Analysis</h3>
-<p>Total Budget: ₱<?= number_format($totalBudget,2) ?></p>
-<p>Used Budget: ₱<?= number_format($used,2) ?></p>
-<p>Utilization: <?= round($ratio,2) ?>%</p>
+<!-- BUDGET -->
+<div class="card">
+    <h3>💰 Budget Analysis</h3>
+    <p><b>Total Budget:</b> ₱<?= number_format($totalBudget,2) ?></p>
+    <p><b>Used Budget:</b> ₱<?= number_format($used,2) ?></p>
+    <p><b>Utilization:</b> <?= round($ratio,2) ?>%</p>
+</div>
 
-<hr>
+<!-- RULE-BASED AI -->
+<div class="card">
+    <h3>🧠 Rule-Based Insight</h3>
+    <p><?= $insight ?></p>
 
-<h3>🧠 AI Insight</h3>
-<p><?= $insight ?></p>
+    <h3>📌 Recommendation</h3>
+    <p><?= $recommendation ?></p>
+</div>
 
-<h3>📌 Recommendation</h3>
-<p><?= $recommendation ?></p>
+<!-- ML RESULT -->
+<div class="card">
+    <h3>🤖 Machine Learning Prediction</h3>
+
+    <?php if ($ml_result): ?>
+        <div class="ml-box">
+            <p><b>Prediction:</b> <?= htmlspecialchars($ml_result['prediction'] ?? 'N/A') ?></p>
+            <p><b>Confidence Score:</b> <?= htmlspecialchars($ml_result['score'] ?? 'N/A') ?></p>
+            <p><b>Suggested Action:</b> <?= htmlspecialchars($ml_result['recommendation'] ?? 'No recommendation') ?></p>
+        </div>
+    <?php else: ?>
+        <p style="color:red;">ML service unavailable. Using fallback AI only.</p>
+    <?php endif; ?>
+</div>
 
 </div>
 

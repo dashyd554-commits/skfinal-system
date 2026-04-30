@@ -198,53 +198,42 @@ td{
 /* ================= CHART ================= */
 const labels = <?= json_encode(array_column($data, 'barangay_name')) ?>;
 const scores = <?= json_encode(array_column($data, 'ml_score')) ?>;
+const participants = <?= json_encode(array_column($data, 'total_participants')) ?>;
+const activities = <?= json_encode(array_column($data, 'total_activities')) ?>;
+const usedBudget = <?= json_encode(array_column($data, 'budget_used')) ?>;
 
-new Chart(document.getElementById('chart'), {
+let myChart = new Chart(document.getElementById('chart'), {
     type: 'bar',
     data: {
         labels: labels,
-        datasets: [{
-            label: 'ML Score',
-            data: scores
-        }]
+        datasets: [
+            {
+                label: 'ML Score',
+                data: scores
+            },
+            {
+                label: 'Participants',
+                data: participants
+            },
+            {
+                label: 'Activities',
+                data: activities
+            },
+            {
+                label: 'Budget Used',
+                data: usedBudget
+            }
+        ]
     },
     options: {
+        responsive:true,
         scales: {
-            y: { beginAtZero: true, max: 100 }
+            y: {
+                beginAtZero: true
+            }
         }
     }
 });
-
-/* ================= REAL-TIME UPDATE ================= */
-function loadLiveData() {
-
-    fetch('api/admin_live_data.php')
-    .then(res => res.json())
-    .then(data => {
-
-        document.getElementById("barangays").innerText = data.barangays;
-        document.getElementById("users").innerText = data.users;
-        document.getElementById("pending").innerText = data.pending_users;
-        document.getElementById("projects").innerText = data.approved_projects;
-        document.getElementById("budget").innerText = "₱" + data.total_budget;
-        document.getElementById("top_barangay").innerText = data.top_barangay;
-
-        let logBox = document.getElementById("audit_logs");
-        logBox.innerHTML = "";
-
-        data.logs.forEach(log => {
-            logBox.innerHTML += `
-                <div style="padding:8px;border-bottom:1px solid #eee;">
-                    <b>${log.username ?? 'System'}</b> - ${log.action}
-                    <br><small>${log.log_time}</small>
-                </div>
-            `;
-        });
-    });
-}
-
-/* refresh every 5 seconds */
-setInterval(loadLiveData, 5000);
 </script>
 
 </body>
