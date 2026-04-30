@@ -2,7 +2,7 @@
 session_start();
 include '../config/db.php';
 
-if ($_SESSION['user']['role'] != 'secretary') {
+if (!isset($_SESSION['user']) || $_SESSION['user']['role'] != 'secretary') {
     header("Location: ../index.php");
     exit();
 }
@@ -11,67 +11,71 @@ $barangay_id = $_SESSION['user']['barangay_id'];
 
 $stmt = $conn->prepare("
     SELECT *
-    FROM proposals
-    WHERE barangay_id=? AND status IN ('pending_treasurer','rejected')
-    ORDER BY created_at DESC
+    FROM projects
+    WHERE barangay_id=?
+    AND status IN ('approved','rejected','pending_treasurer')
+    ORDER BY id DESC
 ");
 $stmt->execute([$barangay_id]);
-
 $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
 
 <!DOCTYPE html>
 <html>
 <head>
-<title>History</title>
+<title>Secretary History</title>
 
 <link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/sbstyle.css">
 
 <style>
-table {
-    width:100%;
-    background:white;
-    border-collapse:collapse;
+.main{
+    margin-left:190px;   /* moved dashboard 30px to left */
+    padding:20px;
+    width:calc(100% - 200px);
+    overflow-x:hidden;
 }
-
-th {
-    background:#6f42c1;
+table{
+    width:100%;
+    background: rgba(255,255,255,0.2);
+    backdrop-filter: blur(500px);
+    border-radius: 15px;
+    padding: 20px;
+}
+th{
+    background:#333;
     color:white;
     padding:10px;
 }
-
-td {
+td{
     padding:10px;
-    border-bottom:1px solid #ddd;
-}
+    text-align:center;
+    }
 </style>
 </head>
-
 <body>
 
 <?php include '../assets/sidebar.php'; ?>
 
 <div class="main">
 
-<h2>📜 Voting History</h2>
+<h2>🕘 Voting History</h2>
 
 <table>
 <tr>
+    <th>ID</th>
     <th>Title</th>
-    <th>Yes</th>
-    <th>No</th>
+    <th>Budget</th>
     <th>Status</th>
 </tr>
 
-<?php foreach ($data as $d) { ?>
-
+<?php foreach($data as $d){ ?>
 <tr>
-    <td><?= htmlspecialchars($d['title']) ?></td>
-    <td><?= $d['vote_yes'] ?></td>
-    <td><?= $d['vote_no'] ?></td>
+    <td><?= $d['id'] ?></td>
+    <td><?= htmlspecialchars($d['name']) ?></td>
+    <td>₱<?= number_format($d['budget_requested'],2) ?></td>
     <td><?= $d['status'] ?></td>
 </tr>
-
 <?php } ?>
 
 </table>

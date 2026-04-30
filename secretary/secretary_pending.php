@@ -2,7 +2,7 @@
 session_start();
 include '../config/db.php';
 
-if ($_SESSION['user']['role'] != 'secretary') {
+if (!isset($_SESSION['user']) || $_SESSION['user']['role'] != 'secretary') {
     header("Location: ../index.php");
     exit();
 }
@@ -11,61 +11,84 @@ $barangay_id = $_SESSION['user']['barangay_id'];
 
 $stmt = $conn->prepare("
     SELECT *
-    FROM proposals
-    WHERE barangay_id=? AND status='pending_secretary'
-    ORDER BY created_at DESC
+    FROM projects
+    WHERE barangay_id = ?
+    AND status = 'pending_secretary'
+    ORDER BY id DESC
 ");
 $stmt->execute([$barangay_id]);
-
-$proposals = $stmt->fetchAll(PDO::FETCH_ASSOC);
+$projects = $stmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
 
 <!DOCTYPE html>
 <html>
 <head>
-<title>Pending Proposals</title>
-
+<title>Secretary Pending</title>
 <link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/sbstyle.css">
 
 <style>
-.card {
-    background:white;
-    padding:15px;
-    margin-bottom:10px;
-    border-radius:10px;
+.main { 
+    margin-left:190px;   /* moved dashboard 30px to left */
+    padding:20px;
+    width:calc(100% - 200px);
+    overflow-x:hidden;
 }
-a.btn {
-    padding:8px 12px;
-    background:#0d6efd;
-    color:white;
-    text-decoration:none;
-    border-radius:6px;
+table { 
+    width:100%;
+    background: rgba(255,255,255,0.2);
+    backdrop-filter: blur(500px);
+    border-radius: 15px;
+    padding: 20px;
 }
+th { 
+    background:#007bff; 
+    color:white; 
+    padding:10px; 
+}
+td {
+     padding:10px; 
+     text-align:center; 
+     border-bottom:1px solid #ddd; 
+    }
+.btn { 
+    padding:6px 10px; 
+    background:green; 
+    color:white; 
+    text-decoration:none; 
+    border-radius:5px; 
+    }
 </style>
 </head>
-
 <body>
 
 <?php include '../assets/sidebar.php'; ?>
 
 <div class="main">
+<h2>📂 Pending Proposals for Voting</h2>
 
-<h2>📌 Pending Proposals</h2>
+<table>
+<tr>
+    <th>ID</th>
+    <th>Title</th>
+    <th>Purpose</th>
+    <th>Budget</th>
+    <th>Action</th>
+</tr>
 
-<?php foreach ($proposals as $p) { ?>
-
-<div class="card">
-    <h3><?= htmlspecialchars($p['title']) ?></h3>
-    <p>Budget: ₱<?= number_format($p['proposed_budget']) ?></p>
-    <p>Status: <?= $p['status'] ?></p>
-
-    <a class="btn" href="secretary_vote.php?id=<?= $p['id'] ?>">
-        Vote Council
-    </a>
-</div>
-
+<?php foreach($projects as $p){ ?>
+<tr>
+    <td><?= $p['id'] ?></td>
+    <td><?= htmlspecialchars($p['name']) ?></td>
+    <td><?= htmlspecialchars($p['purpose']) ?></td>
+    <td>₱<?= number_format($p['budget_requested'],2) ?></td>
+    <td>
+        <a class="btn" href="secretary_vote.php?id=<?= $p['id'] ?>">Open Voting</a>
+    </td>
+</tr>
 <?php } ?>
 
+</table>
 </div>
 
 </body>

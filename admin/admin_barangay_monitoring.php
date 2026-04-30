@@ -2,44 +2,77 @@
 session_start();
 include '../config/db.php';
 
-if (!isset($_SESSION['user']) || $_SESSION['user']['role'] !== 'admin') {
+if (!isset($_SESSION['admin'])) {
     header("Location: ../index.php");
     exit();
 }
 
-/* ================= BARANGAY LIST ================= */
-$stmt = $conn->prepare("
-    SELECT * FROM barangays ORDER BY barangay_name ASC
-");
-$stmt->execute();
-$barangays = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-/* ================= BARANGAY PERFORMANCE ================= */
+/* ================= OPTIMIZED BARANGAY QUERY ================= */
 $stmt = $conn->prepare("
     SELECT 
         b.id,
         b.barangay_name,
 
-        COALESCE(SUM(bu.annual_budget),0) AS total_budget,
-        COALESCE(SUM(bu.budget_used),0) AS used_budget,
+        COALESCE(COUNT(DISTINCT a.id),0) AS total_activities,
+        COALESCE(SUM(a.participants),0) AS total_participants,
 
-        COALESCE(SUM(p.vote_yes),0) AS total_approved_projects,
-
-        COALESCE(SUM(a.participants),0) AS total_participants
+        COALESCE(bu.total_amount,0) AS total_amount,
+        COALESCE(bu.budget_used,0) AS budget_used,
+        COALESCE(bu.remaining_budget,0) AS remaining_budget
 
     FROM barangays b
-    LEFT JOIN budgets bu ON bu.barangay_id = b.id
-    LEFT JOIN proposals p ON p.barangay_id = b.id AND p.status = 'approved'
-    LEFT JOIN activities a ON a.barangay_id = b.id
 
-    GROUP BY b.id
-    ORDER BY used_budget DESC
+    LEFT JOIN activities a 
+        ON a.barangay_id = b.id
+
+    LEFT JOIN budgets bu 
+        ON bu.barangay_id = b.id
+        AND bu.year = (
+            SELECT MAX(year) FROM budgets WHERE barangay_id = b.id
+        )
+
+    GROUP BY 
+        b.id, b.barangay_name,
+        bu.total_amount,
+        bu.budget_used,
+        bu.remaining_budget
+
+    ORDER BY total_participants DESC
 ");
+
 $stmt->execute();
-$data = $stmt->fetchAll(PDO::FETCH_ASSOC);
+$barangays = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+/* ================= ML SCORE ================= */
+function computeScore($row) {
+
+    $participants = $row['total_participants'] ?? 0;
+    $activities = $row['total_activities'] ?? 0;
+    $budgetUsed = $row['budget_used'] ?? 0;
+    $budget = $row['total_amount'] ?: 1;
+
+    $engagement = ($participants + ($activities * 10));
+    $budgetEfficiency = ($budgetUsed > 0) ? ($participants / $budgetUsed) : 0;
+    $budgetRatio = $budgetUsed / $budget;
+
+    $score = ($engagement * 0.4) + ($budgetEfficiency * 50) + ($budgetRatio * 30);
+
+    return min(100, round($score, 2));
+}
+
+/* ================= PROCESS ================= */
+foreach ($barangays as $i => $b) {
+    $barangays[$i]['ml_score'] = computeScore($b);
+}
 
 /* ================= TOP BARANGAY ================= */
-$top = $data[0] ?? null;
+usort($barangays, fn($a,$b) => $b['ml_score'] <=> $a['ml_score']);
+
+$top = $barangays[0]['barangay_name'] ?? 'N/A';
+$topScore = $barangays[0]['ml_score'] ?? 0;
+
+/* ================= TOTAL ================= */
+$totalBarangays = count($barangays);
 ?>
 
 <!DOCTYPE html>
@@ -50,36 +83,35 @@ $top = $data[0] ?? null;
 <link rel="stylesheet" href="../assets/style.css">
 <link rel="stylesheet" href="../assets/sbstyle.css">
 
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
 <style>
 .grid {
     display:grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4,1fr);
     gap:15px;
 }
 
 .card {
-    background:rgba(255,255,255,0.2);
-    backdrop-filter:blur(10px);
     padding:20px;
-    border-radius:12px;
     text-align:center;
 }
 
-.section {
-    margin-top:20px;
-    background:rgba(255,255,255,0.2);
-    backdrop-filter:blur(15px);
-    padding:20px;
-    border-radius:12px;
+.glass {
+    background: rgba(255,255,255,0.2);
+    backdrop-filter: blur(500px);
+    border-radius: 15px;
+    padding: 20px;
 }
 
 table {
     width:100%;
     border-collapse:collapse;
+    margin-top:20px;
 }
 
 th {
-    background:#0d6efd;
+    background:#007bff;
     color:white;
     padding:10px;
 }
@@ -87,9 +119,9 @@ th {
 td {
     padding:10px;
     border-bottom:1px solid #ddd;
+    text-align:center;
 }
 </style>
-
 </head>
 
 <body>
@@ -99,52 +131,59 @@ td {
 <div class="main">
 
     <div class="header">
-        <h2>🏘 Barangay Monitoring</h2>
-        <p>Compare performance, budget usage, and development progress</p>
+        <h2>🏘️ Barangay Monitoring (Real-Time)</h2>
     </div>
 
-    <!-- TOP BARANGAY -->
-    <div class="section">
-        <h3>🏆 Top Performing Barangay</h3>
+    <!-- KPI -->
+    <div class="grid">
 
-        <?php if ($top) { ?>
-            <p><b><?= $top['barangay_name'] ?></b></p>
-            <p>💰 Budget Used: ₱ <?= number_format($top['used_budget']) ?></p>
-            <p>📊 Approved Projects: <?= $top['total_approved_projects'] ?></p>
-            <p>👥 Participants: <?= $top['total_participants'] ?></p>
-        <?php } ?>
+        <div class="glass card">
+            <h3>Total Barangays</h3>
+            <h2><?= $totalBarangays ?></h2>
+        </div>
+
+        <div class="glass card">
+            <h3>Top Barangay</h3>
+            <h2><?= $top ?></h2>
+        </div>
+
+        <div class="glass card">
+            <h3>Top Score</h3>
+            <h2><?= $topScore ?>%</h2>
+        </div>
+
+        <div class="glass card">
+            <h3>Status</h3>
+            <h2>LIVE</h2>
+        </div>
+
     </div>
 
-    <!-- BARANGAY TABLE -->
-    <div class="section">
-        <h3>📊 Barangay Performance Comparison</h3>
+    <!-- TABLE -->
+    <div class="glass">
+        <h3>📊 Barangay Performance</h3>
 
         <table>
             <tr>
                 <th>Barangay</th>
-                <th>Total Budget</th>
-                <th>Used Budget</th>
-                <th>Approved Projects</th>
+                <th>Activities</th>
                 <th>Participants</th>
-                <th>Efficiency (%)</th>
+                <th>Budget</th>
+                <th>Used</th>
+                <th>Remaining</th>
+                <th>ML Score</th>
             </tr>
 
-            <?php foreach ($data as $row) { 
-
-                $efficiency = ($row['total_budget'] > 0)
-                    ? ($row['used_budget'] / $row['total_budget']) * 100
-                    : 0;
-            ?>
-
+            <?php foreach ($barangays as $b) { ?>
             <tr>
-                <td><?= $row['barangay_name'] ?></td>
-                <td>₱ <?= number_format($row['total_budget']) ?></td>
-                <td>₱ <?= number_format($row['used_budget']) ?></td>
-                <td><?= $row['total_approved_projects'] ?></td>
-                <td><?= $row['total_participants'] ?></td>
-                <td><?= number_format($efficiency,2) ?>%</td>
+                <td><?= htmlspecialchars($b['barangay_name']) ?></td>
+                <td><?= $b['total_activities'] ?></td>
+                <td><?= $b['total_participants'] ?></td>
+                <td>₱<?= number_format($b['total_amount']) ?></td>
+                <td>₱<?= number_format($b['budget_used']) ?></td>
+                <td>₱<?= number_format($b['remaining_budget']) ?></td>
+                <td><b><?= $b['ml_score'] ?>%</b></td>
             </tr>
-
             <?php } ?>
 
         </table>

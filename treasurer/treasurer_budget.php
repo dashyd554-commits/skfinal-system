@@ -7,25 +7,45 @@ if (!isset($_SESSION['user']) || $_SESSION['user']['role'] != 'treasurer') {
     exit();
 }
 
+$barangay_id = $_SESSION['user']['barangay_id'];
 $message = "";
 
 /* ================= INSERT BUDGET ================= */
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
-    $amount = $_POST['amount'] ?? '';
+    $total_amount = $_POST['total_amount'] ?? '';
     $year = $_POST['year'] ?? '';
 
-    if (!empty($amount) && !empty($year)) {
+    if (!empty($total_amount) && !empty($year)) {
 
         try {
-            $stmt = $conn->prepare("
-                INSERT INTO budgets (amount, year)
-                VALUES (?, ?)
+
+            /* check if year already exists for this barangay */
+            $check = $conn->prepare("
+                SELECT id FROM budgets
+                WHERE barangay_id = ? AND year = ?
             ");
+            $check->execute([$barangay_id, $year]);
 
-            $stmt->execute([$amount, $year]);
+            if ($check->fetch()) {
+                $message = "❌ Budget for this year already exists.";
+            } else {
 
-            $message = "✅ Budget added successfully!";
+                $stmt = $conn->prepare("
+                    INSERT INTO budgets 
+                    (barangay_id, total_amount, used_amount, remaining_budget, year)
+                    VALUES (?, ?, 0, ?, ?)
+                ");
+
+                $stmt->execute([
+                    $barangay_id,
+                    $total_amount,
+                    $total_amount,
+                    $year
+                ]);
+
+                $message = "✅ Annual budget saved successfully!";
+            }
 
         } catch (PDOException $e) {
             $message = "❌ Error: " . $e->getMessage();
@@ -36,30 +56,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-/* ================= GET BUDGET DATA ================= */
-$stmt = $conn->prepare("SELECT year, total_amount FROM budgets ORDER BY year ASC");
-$stmt->execute();
+/* ================= GET BARANGAY BUDGET HISTORY ================= */
+$stmt = $conn->prepare("
+    SELECT year, total_amount
+    FROM budgets
+    WHERE barangay_id = ?
+    ORDER BY year ASC
+");
+$stmt->execute([$barangay_id]);
 $budgets = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 $years = [];
-$amounts = [];
+$total_amounts = [];
 
 foreach ($budgets as $b) {
     $years[] = $b['year'];
-    $amounts[] = (float)$b['total_amount'];
+    $total_amounts[] = (float)$b['total_amount'];
 }
 
 /* ================= ML ANALYSIS ================= */
-$trend = "no data";
+$trend = "no";
 $insight = "Not enough data for ML analysis.";
 $forecast = 0;
 
-$count = count($amounts);
+$count = count($total_amounts);
 
 if ($count >= 2) {
 
-    $last = $amounts[$count - 1];
-    $prev = $amounts[$count - 2];
+    $last = $total_amounts[$count - 1];
+    $prev = $total_amounts[$count - 2];
 
     if ($last > $prev) {
         $trend = "up";
@@ -71,7 +96,7 @@ if ($count >= 2) {
         $forecast = $last * 0.90;
     } else {
         $trend = "stable";
-        $insight = "Budget is stable across recent years.";
+        $insight = "Budget remains stable based on historical records.";
         $forecast = $last;
     }
 }
@@ -82,103 +107,119 @@ if ($count >= 2) {
 <head>
 <title>Budget Management</title>
 
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-
 <link rel="stylesheet" href="../assets/style.css">
 <link rel="stylesheet" href="../assets/sbstyle.css">
 
 <style>
-input {
-    width: 100%;
-    padding: 10px;
-    margin-bottom: 12px;
-    border-radius: 8px;
-    border: 1px solid #ccc;
-    font-size: 14px;
+body{
+    margin:0;
+    background:url('../assets/bg.jpg') no-repeat center center fixed;
+    background-size:cover;
 }
 
-button {
-    padding: 10px 15px;
-    background: #ff9800;
-    color: white;
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
+.main{
+    margin-left:190px;   /* moved dashboard 30px to left */
+    padding:20px;
+    width:calc(100% - 200px);
+    overflow-x:hidden;
 }
 
-button:hover {
-    background: #e68900;
+.glass{
+    background:rgba(255,255,255,0.35);
+    backdrop-filter:blur(30px);
+    border-radius:15px;
+    box-shadow:0 8px 25px rgba(0,0,0,0.08);
+    padding:20px;
+    margin-bottom:20px;
 }
 
-.message {
-    margin-top: 10px;
-    font-size: 14px;
+.form-container{
+    max-width:500px;
 }
 
-.form-container {
-    max-width: 500px;
-    margin: auto;
+input{
+    width:100%;
+    padding:12px;
+    margin-bottom:12px;
+    border:1px solid #ccc;
+    border-radius:8px;
 }
 
-.badge {
+button{
+    width:100%;
+    padding:12px;
+    background:#1e3c72;
+    color:white;
+    border:none;
+    border-radius:8px;
+    cursor:pointer;
+}
+
+button:hover{
+    background:#16305d;
+}
+
+.message{
+    margin-top:10px;
+    font-size:14px;
+    color:#c0392b;
+}
+
+.badge{
     display:inline-block;
-    padding:5px 10px;
+    padding:6px 12px;
     border-radius:8px;
     color:white;
     font-size:12px;
 }
 
-.up { background:green; }
-.down { background:red; }
-.stable { background:gray; }
-.no { background:gray; }
+.up{background:green;}
+.down{background:red;}
+.stable{background:gray;}
+.no{background:#555;}
 
-.glass {
-    background: rgba(255,255,255,0.2);
-    backdrop-filter: blur(500px);
-    border-radius: 15px;
-    padding: 20px;
+table{
+    width:100%;
+    border-collapse:collapse;
+    margin-top:10px;
+}
+
+th{
+    background:#1e3c72;
+    color:white;
+    padding:12px;
+}
+
+td{
+    padding:10px;
+    text-align:center;
+    border-bottom:1px solid #ddd;
 }
 </style>
 
 </head>
-
 <body>
 
 <?php include '../assets/sidebar.php'; ?>
 
 <div class="main">
 
-    <div class="header">
-        <h2>💰 Budget Management</h2>
-        <p>Input annual budget allocation with ML insights</p>
-    </div>
+    <h2>💰 Input Annual Budget Allocation</h2>
 
-    <!-- FORM -->
-    <div class="glass form-container" style="padding:20px;">
-
-        <h3>Input Budget</h3>
+    <div class="glass form-container">
+        <h3>Budget Entry Form</h3>
 
         <form method="POST">
-
-            <input type="number" name="amount" placeholder="Budget Amount" required>
-
-            <input type="number" name="year" placeholder="Year (e.g. 2026)" required>
-
-            <button type="submit">➕ Save Budget</button>
-
+            <input type="number" name="total_amount" placeholder="Enter Annual Budget Amount" required>
+            <input type="number" name="year" placeholder="Enter Budget Year" required>
+            <button type="submit">➕ Save Annual Budget</button>
         </form>
 
-        <div class="message">
-            <?= $message ?>
-        </div>
-
+        <div class="message"><?= $message ?></div>
     </div>
 
-    <!-- ML OUTPUT -->
-    <div class="glass" style="margin-top:20px; padding:20px;">
-
-        <h3>🤖 ML Insight</h3>
+    <div class="glass">
+        <h3>🤖 ML Budget Recommendation</h3>
 
         <p>
             Trend:
@@ -191,10 +232,30 @@ button:hover {
 
         <hr>
 
-        <h3>📈 Forecast</h3>
+        <h3>📈 Suggested Next Annual Budget</h3>
+        <p><b>₱<?= number_format($forecast,2) ?></b></p>
+    </div>
 
-        <p>Predicted Next Budget: <b>₱ <?= number_format($forecast) ?></b></p>
+    <div class="glass">
+        <h3>📋 Barangay Budget History</h3>
 
+        <table>
+            <tr>
+                <th>Year</th>
+                <th>Total Annual Budget</th>
+            </tr>
+
+            <?php if(count($budgets)==0){ ?>
+                <tr><td colspan="2">No budget records yet.</td></tr>
+            <?php } ?>
+
+            <?php foreach($budgets as $b){ ?>
+            <tr>
+                <td><?= $b['year'] ?></td>
+                <td>₱<?= number_format($b['total_amount'],2) ?></td>
+            </tr>
+            <?php } ?>
+        </table>
     </div>
 
 </div>

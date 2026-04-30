@@ -7,80 +7,54 @@ if (!isset($_SESSION['user']) || $_SESSION['user']['role'] != 'treasurer') {
     exit();
 }
 
-/* ================= BARANGAY ID ================= */
 $barangay_id = $_SESSION['user']['barangay_id'];
 
-/* ================= PRESENT ANNUAL BUDGET (FILTERED) ================= */
+/* ================= GET LATEST BUDGET ================= */
 $stmt = $conn->prepare("
-    SELECT year, total_amount 
-    FROM budgets 
-    WHERE barangay_id = :barangay_id
-    ORDER BY year DESC 
+    SELECT *
+    FROM budgets
+    WHERE barangay_id = ?
+    ORDER BY year DESC
     LIMIT 1
 ");
+$stmt->execute([$barangay_id]);
+$budget = $stmt->fetch(PDO::FETCH_ASSOC);
 
-$stmt->execute([
-    ':barangay_id' => $barangay_id
-]);
+$annualBudget = $budget['total_amount'] ?? 0;
 
-$current = $stmt->fetch(PDO::FETCH_ASSOC);
-
-$currentYear = $current['year'] ?? 'N/A';
-$currentBudget = $current['total_amount'] ?? 0;
-
-/* ================= YEARLY DATA (FILTERED) ================= */
+/* ================= APPROVED ONLY SPENDING ================= */
 $stmt = $conn->prepare("
-    SELECT year, total_amount 
-    FROM budgets 
-    WHERE barangay_id = :barangay_id
-    ORDER BY year ASC
+    SELECT COALESCE(SUM(amount),0)
+    FROM budget_transactions
+    WHERE barangay_id = ?
 ");
+$stmt->execute([$barangay_id]);
+$approvedDisbursement = $stmt->fetchColumn();
 
-$stmt->execute([
-    ':barangay_id' => $barangay_id
-]);
+/* ✔ FIX: computed from approved ONLY */
+$usedBudget = $approvedDisbursement;
+$remainingBudget = $annualBudget - $usedBudget;
 
-$years = [];
-$amounts = [];
+/* ================= REJECTED PROPOSALS ================= */
+$stmt = $conn->prepare("
+    SELECT COUNT(*)
+    FROM projects
+    WHERE barangay_id = ?
+    AND status = 'rejected'
+");
+$stmt->execute([$barangay_id]);
+$rejectedFunds = $stmt->fetchColumn();
 
-while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-    $years[] = $row['year'];
-    $amounts[] = $row['total_amount'];
-}
-
-/* ================= ML ANALYSIS ================= */
-$trend = "stable";
-$mlInsight = "Not enough data for prediction.";
-$mlScore = 0;
-
-if (count($amounts) >= 2) {
-
-    $last = $amounts[count($amounts) - 1];
-    $prev = $amounts[count($amounts) - 2];
-
-    if ($last > $prev) {
-        $trend = "up";
-        $mlInsight = "Budget trend is increasing. Strong financial performance detected.";
-        $mlScore = 85;
-    } elseif ($last < $prev) {
-        $trend = "down";
-        $mlInsight = "Budget trend is decreasing. Review funding sources.";
-        $mlScore = 40;
-    } else {
-        $trend = "stable";
-        $mlInsight = "Budget is stable. Maintain current strategy.";
-        $mlScore = 60;
-    }
-}
-
-/* ================= FORECAST ================= */
-$forecast = $currentBudget;
-
-if ($trend == "up") {
-    $forecast = $currentBudget * 1.10;
-} elseif ($trend == "down") {
-    $forecast = $currentBudget * 0.90;
-}
+/* ================= TRANSACTIONS ================= */
+$stmt = $conn->prepare("
+    SELECT *
+    FROM budget_transactions
+    WHERE barangay_id = ?
+    ORDER BY created_at DESC
+    LIMIT 10
+");
+$stmt->execute([$barangay_id]);
+$transactions = $stmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
 
 <!DOCTYPE html>
@@ -88,51 +62,112 @@ if ($trend == "up") {
 <head>
 <title>Treasurer Dashboard</title>
 
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
 <link rel="stylesheet" href="../assets/style.css">
 <link rel="stylesheet" href="../assets/sbstyle.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <style>
-.grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 15px;
+*{
+    box-sizing:border-box;
+    font-family:Arial;
 }
 
-.card {
-    padding: 20px;
-    text-align: center;
+body{
+    margin:0;
+    background:url('../assets/bg.jpg') no-repeat center center fixed;
+    background-size:cover;
 }
 
-.badge {
-    display:inline-block;
-    padding:5px 10px;
-    border-radius:8px;
-    color:white;
-    font-size:12px;
+/* dark overlay */
+body::before{
+    content:"";
+    position:fixed;
+    inset:0;
+    background:rgba(0,0,0,0.4);
+    z-index:-1;
 }
 
-.up { background:green; }
-.down { background:red; }
-.stable { background:gray; }
+.main{
+    margin-left:190px;
+    padding:20px;
+    width:calc(100% - 200px);
+}
 
-@media (max-width: 768px) {
-    .grid {
-        grid-template-columns: 1fr;
+/* GRID SAME STRUCTURE */
+.grid{
+    display:grid;
+    grid-template-columns:repeat(4,1fr);
+    gap:20px;
+    margin-bottom:20px;
+}
+
+/* GLASS CARD */
+.glass{
+    background:rgba(255,255,255,0.15);
+    backdrop-filter:blur(18px);
+    border-radius:15px;
+    padding:20px;
+    color:#fff;
+    box-shadow:0 8px 25px rgba(0,0,0,0.2);
+}
+
+.card h3{
+    margin:0;
+    font-size:14px;
+    color:#ddd;
+}
+
+.card h2{
+    margin-top:10px;
+    color:#fff;
+}
+
+.section-title{
+    color:#fff;
+    margin-bottom:15px;
+}
+
+/* CHART */
+.chart-holder{
+    width:320px;
+    margin:auto;
+}
+
+/* TABLE */
+table{
+    width:100%;
+    border-collapse:collapse;
+    color:#fff;
+}
+
+th{
+    background:rgba(30,60,114,0.85);
+    padding:12px;
+}
+
+td{
+    padding:10px;
+    text-align:center;
+    border-bottom:1px solid rgba(255,255,255,0.2);
+}
+
+/* RESPONSIVE */
+@media(max-width:1000px){
+    .grid{
+        grid-template-columns:repeat(2,1fr);
     }
 }
 
-.glass {
-    background: rgba(255,255,255,0.2);
-    backdrop-filter: blur(500px);
-    border-radius: 15px;
-    padding: 20px;
+@media(max-width:768px){
+    .main{
+        margin-left:70px;
+    }
+
+    .grid{
+        grid-template-columns:1fr;
+    }
 }
 </style>
-
 </head>
 
 <body>
@@ -141,64 +176,103 @@ if ($trend == "up") {
 
 <div class="main">
 
-<div class="header">
-    <h2>💰 Treasurer Dashboard (ML Enhanced)</h2>
-    <p>Financial monitoring with predictive insights</p>
-</div>
+    <h2 style="color:white;">💰 Treasurer Financial Dashboard</h2>
 
-<!-- KPI CARDS -->
-<div class="grid">
+    <!-- CARDS -->
+    <div class="grid">
 
-    <div class="glass card">
-        <h3>📅 Present Year</h3>
-        <h2><?= $currentYear ?></h2>
+        <div class="glass card">
+            <h3>Annual Budget</h3>
+            <h2>₱<?= number_format($annualBudget,2) ?></h2>
+        </div>
+
+        <div class="glass card">
+            <h3>Used Budget</h3>
+            <h2>₱<?= number_format($usedBudget,2) ?></h2>
+        </div>
+
+        <div class="glass card">
+            <h3>Remaining Budget</h3>
+            <h2>₱<?= number_format($remainingBudget,2) ?></h2>
+        </div>
+
+        <div class="glass card">
+            <h3>Rejected Proposals</h3>
+            <h2><?= $rejectedFunds ?></h2>
+        </div>
+
     </div>
 
-    <div class="glass card">
-        <h3>💰 Current Budget</h3>
-        <h2>₱ <?= number_format($currentBudget) ?></h2>
+    <!-- SECOND ROW (KEEP YOUR ORIGINAL LAYOUT) -->
+    <div class="grid">
+
+        <div class="glass card">
+            <h3>Approved Disbursement</h3>
+            <h2>₱<?= number_format($approvedDisbursement,2) ?></h2>
+        </div>
+
+        <!-- ✔ YOUR ORIGINAL CHART SECTION (RESTORED) -->
+        <div class="glass" style="grid-column: span 3;">
+            <h3 class="section-title">📊 Budget Utilization</h3>
+            <div class="chart-holder">
+                <canvas id="budgetChart"></canvas>
+            </div>
+        </div>
+
     </div>
 
-    <div class="glass card">
-        <h3>📊 Trend</h3>
-        <span class="badge <?= $trend ?>">
-            <?= strtoupper($trend) ?>
-        </span>
+    <!-- TABLE -->
+    <div class="glass">
+
+        <h3 class="section-title">💸 Recent Spending Transactions</h3>
+
+        <table>
+            <tr>
+                <th>ID</th>
+                <th>Amount</th>
+                <th>Description</th>
+                <th>Date</th>
+            </tr>
+
+            <?php if(empty($transactions)){ ?>
+                <tr>
+                    <td colspan="4">No transactions yet</td>
+                </tr>
+            <?php } ?>
+
+            <?php foreach($transactions as $t){ ?>
+            <tr>
+                <td><?= $t['id'] ?></td>
+                <td>₱<?= number_format($t['amount'],2) ?></td>
+                <td><?= htmlspecialchars($t['description']) ?></td>
+                <td><?= date('F d, Y h:i A', strtotime($t['created_at'])) ?></td>
+            </tr>
+            <?php } ?>
+
+        </table>
+
     </div>
 
 </div>
 
-<!-- CHART -->
-<div class="glass" style="margin-top:20px;">
-    <h3>📊 Budget History</h3>
-    <canvas id="chart"></canvas>
-</div>
-
-<!-- ML INSIGHT -->
-<div class="glass" style="margin-top:20px;">
-    <h3>🤖 ML Insight</h3>
-    <p><?= htmlspecialchars($mlInsight) ?></p>
-    <p><b>ML Score:</b> <?= $mlScore ?>%</p>
-</div>
-
-<!-- FORECAST -->
-<div class="glass" style="margin-top:20px;">
-    <h3>📈 Forecast</h3>
-    <p>Projected Next Budget:</p>
-    <h2>₱ <?= number_format($forecast) ?></h2>
-</div>
-
-</div>
-
+<!-- ✔ YOUR ORIGINAL CHART SCRIPT (RESTORED) -->
 <script>
-new Chart(document.getElementById('chart'), {
-    type: 'line',
+new Chart(document.getElementById('budgetChart'), {
+    type: 'doughnut',
     data: {
-        labels: <?= json_encode($years) ?>,
+        labels: ['Used Budget','Remaining Budget'],
         datasets: [{
-            label: 'Budget',
-            data: <?= json_encode($amounts) ?>
+            data: [
+                <?= (float)$usedBudget ?>,
+                <?= (float)$remainingBudget ?>
+            ]
         }]
+    },
+    options:{
+        responsive:true,
+        plugins:{
+            legend:{ position:'bottom' }
+        }
     }
 });
 </script>
