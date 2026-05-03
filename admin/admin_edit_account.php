@@ -2,7 +2,8 @@
 session_start();
 include '../config/db.php';
 
-if (!isset($_SESSION['admin'])) {
+/* ================= SECURITY CHECK ================= */
+if (!isset($_SESSION['user']) || $_SESSION['user']['role'] !== 'municipal_admin') {
     header("Location: ../index.php");
     exit();
 }
@@ -13,7 +14,7 @@ if (!$id) {
     die("Invalid request");
 }
 
-/* ================= LOAD USER DATA ================= */
+/* ================= LOAD USER ================= */
 $stmt = $conn->prepare("SELECT * FROM users WHERE id = ?");
 $stmt->execute([$id]);
 $user = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -24,79 +25,101 @@ if (!$user) {
 
 $message = "";
 
+/* ================= AGE LIMIT (SK RULE) ================= */
+$min_age = 15;
+$max_age = 30;
+
 /* ================= UPDATE USER ================= */
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $fullname = trim($_POST['fullname'] ?? '');
     $age = intval($_POST['age'] ?? 0);
-    $email = trim($_POST['email'] ?? '');
     $username = trim($_POST['username'] ?? '');
-    $role = trim($_POST['role'] ?? '');
-    $status = trim($_POST['status'] ?? '');
-    $is_verified = isset($_POST['is_verified']) ? 1 : 0;
-    $approved_by_admin = isset($_POST['approved_by_admin']) ? 1 : 0;
+    $role = $_POST['role'] ?? '';
+    $status = $_POST['status'] ?? '';
+    $password = $_POST['password'] ?? ''; // ✅ NEW
 
-    if (!$fullname || !$email || !$username || !$role) {
-        $message = "⚠️ Please fill all required fields!";
-    }
+    /* ================= VALIDATION ================= */
 
-    elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        $message = "❌ Invalid email format!";
+    if ($age < $min_age || $age > $max_age) {
+        $message = "❌ Age must be between $min_age and $max_age.";
     }
 
     else {
 
-        $stmt = $conn->prepare("
-            UPDATE users SET
-                fullname = ?,
-                age = ?,
-                email = ?,
-                username = ?,
-                role = ?,
-                status = ?,
-                is_verified = ?,
-                approved_by_admin = ?
-            WHERE id = ?
-        ");
+        /* ================= DUPLICATE CHECK (USERNAME) ================= */
+        $stmt = $conn->prepare("SELECT id FROM users WHERE username = ? AND id != ?");
+        $stmt->execute([$username, $id]);
 
-        $updated = $stmt->execute([
-            $fullname,
-            $age,
-            $email,
-            $username,
-            $role,
-            $status,
-            $is_verified,
-            $approved_by_admin,
-            $id
-        ]);
+        if ($stmt->fetch()) {
+            $message = "❌ Username already exists!";
+        }
 
-        if ($updated) {
+        /* ================= DUPLICATE CHECK (FULL NAME) ================= */
+        else {
+            $stmt = $conn->prepare("SELECT id FROM users WHERE full_name = ? AND id != ?");
+            $stmt->execute([$fullname, $id]);
 
-            require '../config/mail.php';
+            if ($stmt->fetch()) {
+                $message = "❌ Full name already exists!";
+            }
 
-            $subject = "Account Updated by Admin";
-            $body = "
-                <h3>SK Account Update Notification</h3>
-                <p>Your account has been updated by the administrator.</p>
-                <ul>
-                    <li><b>Full Name:</b> $fullname</li>
-                    <li><b>Username:</b> $username</li>
-                    <li><b>Email:</b> $email</li>
-                    <li><b>Role:</b> $role</li>
-                    <li><b>Status:</b> $status</li>
-                </ul>
-            ";
+            else {
 
-            sendEmail($email, $subject, $body);
+                /* ================= PASSWORD HANDLING ================= */
+                if (!empty($password)) {
 
-            echo "<script>
-                alert('✅ Account updated successfully!');
-                window.location='admin_officials_information.php';
-            </script>";
-            exit();
-        } else {
-            $message = "❌ Update failed!";
+                    if (strlen($password) < 8) {
+                        $message = "❌ Password must be at least 8 characters!";
+                    }
+
+                    else {
+                        $hashed = password_hash($password, PASSWORD_DEFAULT);
+                        $plain = $password;
+                    }
+
+                } else {
+                    $hashed = $user['password'];
+                    $plain = $user['plain_password'];
+                }
+
+                if (empty($message)) {
+
+                    /* ================= UPDATE ================= */
+                    $stmt = $conn->prepare("
+                        UPDATE users SET
+                            full_name = ?,
+                            age = ?,
+                            username = ?,
+                            password = ?,
+                            plain_password = ?,
+                            role = ?,
+                            status = ?
+                        WHERE id = ?
+                    ");
+
+                    $updated = $stmt->execute([
+                        $fullname,
+                        $age,
+                        $username,
+                        $hashed,
+                        $plain,
+                        $role,
+                        $status,
+                        $id
+                    ]);
+
+                    if ($updated) {
+                        echo "<script>
+                            alert('✅ Account updated successfully!');
+                            window.location='admin_official_information.php';
+                        </script>";
+                        exit();
+                    } else {
+                        $message = "❌ Update failed!";
+                    }
+                }
+            }
         }
     }
 }
@@ -123,7 +146,6 @@ body{
     background:url('../assets/bg.jpg') no-repeat center center fixed;
     background-size:cover;
     min-height:100vh;
-    overflow-x:hidden;
 }
 
 .main{
@@ -139,7 +161,6 @@ body{
     backdrop-filter:blur(18px);
     padding:30px;
     border-radius:18px;
-    box-shadow:0 4px 15px rgba(0,0,0,0.25);
 }
 
 h2{
@@ -161,20 +182,6 @@ input,select{
     margin-bottom:12px;
     border:none;
     border-radius:8px;
-    outline:none;
-}
-
-.checkbox-group{
-    background:rgba(255,255,255,0.8);
-    padding:12px;
-    border-radius:8px;
-    margin-bottom:12px;
-}
-
-.checkbox-group label{
-    display:block;
-    margin:8px 0;
-    font-weight:bold;
 }
 
 .btn-group{
@@ -189,20 +196,15 @@ button,.cancel{
     padding:12px;
     border:none;
     border-radius:8px;
-    text-decoration:none;
     text-align:center;
     color:white;
     font-weight:bold;
     cursor:pointer;
+    text-decoration:none;
 }
 
-button{
-    background:#007bff;
-}
-
-.cancel{
-    background:#dc3545;
-}
+button{ background:#007bff; }
+.cancel{ background:#dc3545; }
 
 .footer{
     width:100%;
@@ -214,20 +216,15 @@ button{
     border-radius:10px;
     font-size:13px;
 }
-
+html, body{
+    overflow-x:hidden;
+}
+/* MOBILE FIX */
 @media(max-width:768px){
-    .main{
-        margin-left:0;
-        width:100%;
-        padding:12px;
-    }
-
-    .container{
-        padding:20px;
-    }
-
-    .btn-group{
-        flex-direction:column;
+    .footer{
+        font-size:11px;
+        padding:10px;
+        margin-bottom:10px;
     }
 }
 </style>
@@ -239,56 +236,47 @@ button{
 
 <h2>✏️ Edit User Account</h2>
 
-    <div class="container">
+<div class="container">
 
+    <?php if(!empty($message)) { ?>
         <div class="message"><?= $message ?></div>
+    <?php } ?>
 
-        <form method="POST">
+    <form method="POST">
 
-            <input type="text" name="fullname" value="<?= htmlspecialchars($user['fullname'] ?? '') ?>" placeholder="Full Name" required>
+        <input type="text" name="fullname" value="<?= htmlspecialchars($user['full_name'] ?? '') ?>" required>
 
-            <input type="number" name="age" value="<?= htmlspecialchars($user['age'] ?? '') ?>" placeholder="Age">
+        <input type="number" name="age" value="<?= htmlspecialchars($user['age'] ?? '') ?>" required>
 
-            <input type="email" name="email" value="<?= htmlspecialchars($user['email'] ?? '') ?>" placeholder="Email" required>
+        <input type="text" name="username" value="<?= htmlspecialchars($user['username']) ?>" required>
 
-            <input type="text" name="username" value="<?= htmlspecialchars($user['username']) ?>" placeholder="Username" required>
+        <!-- ✅ PASSWORD EDIT FIELD -->
+        <input type="text" name="password" placeholder="Enter new password (leave blank to keep old)">
 
-            <select name="role" required>
-                <option value="chairman" <?= $user['role']=='chairman'?'selected':'' ?>>Chairman</option>
-                <option value="secretary" <?= $user['role']=='secretary'?'selected':'' ?>>Secretary</option>
-                <option value="treasurer" <?= $user['role']=='treasurer'?'selected':'' ?>>Treasurer</option>
-            </select>
+        <select name="role" required>
+            <option value="chairman" <?= $user['role']=='chairman'?'selected':'' ?>>Chairman</option>
+            <option value="secretary" <?= $user['role']=='secretary'?'selected':'' ?>>Secretary</option>
+            <option value="treasurer" <?= $user['role']=='treasurer'?'selected':'' ?>>Treasurer</option>
+        </select>
 
-            <select name="status">
-                <option value="pending" <?= $user['status']=='pending'?'selected':'' ?>>Pending</option>
-                <option value="approved" <?= $user['status']=='approved'?'selected':'' ?>>Approved</option>
-                <option value="rejected" <?= $user['status']=='rejected'?'selected':'' ?>>Rejected</option>
-            </select>
+        <select name="status">
+            <option value="pending" <?= $user['status']=='pending'?'selected':'' ?>>Pending</option>
+            <option value="approved" <?= $user['status']=='approved'?'selected':'' ?>>Approved</option>
+            <option value="inactive" <?= $user['status']=='inactive'?'selected':'' ?>>Inactive</option>
+        </select>
 
-            <div class="checkbox-group">
-                <label>
-                    <input type="checkbox" name="is_verified" <?= $user['is_verified'] ? 'checked' : '' ?>>
-                    Email Verified
-                </label>
-
-                <label>
-                    <input type="checkbox" name="approved_by_admin" <?= $user['approved_by_admin'] ? 'checked' : '' ?>>
-                    Admin Approved
-                </label>
-            </div>
-
-            <div class="btn-group">
-                <button type="submit">✅ Update Account</button>
-                <a class="cancel" href="admin_officials_information.php">❌ Cancel Edit</a>
-            </div>
-
-        </form>
-
-    </div>
-
-    <div class="footer">
-            © 2026 SK Decision Support System | Responsive Community Planning Platform
+        <div class="btn-group">
+            <button type="submit">✅ Update Account</button>
+            <a class="cancel" href="admin_official_information.php">❌ Cancel</a>
         </div>
+
+    </form>
+
+</div>
+
+<div class="footer">
+    © 2026 SK Decision Support System | Responsive Community Planning Platform
+</div>
 
 </div>
 

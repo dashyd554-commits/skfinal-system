@@ -7,10 +7,10 @@ $message = "";
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $username = $_POST['username'] ?? '';
-    $password = $_POST['password'] ?? '';
+    $plain_password = $_POST['plain_password'] ?? '';
 
     /* ADMIN LOGIN (STATIC) */
-    if ($username === 'admin' && $password === 'admin123') {
+    if ($username === 'admin' && $plain_password === 'admin123') {
         $_SESSION['admin'] = true;
         header("Location: admin/admin_dashboard.php");
         exit();
@@ -20,33 +20,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $stmt = $conn->prepare("SELECT * FROM users WHERE username = ?");
     $stmt->execute([$username]);
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
-
+    
     if (!$user) {
         $message = "User not found!";
-    } else {
-
-        if ($user['status'] !== 'approved') {
-            $message = "Waiting for admin approval.";
+    } 
+    else {
+    
+        /* ACCOUNT STATUS CHECK */
+        if ($user['status'] === 'inactive') {
+            $message = "This account is currently inactive. Please contact municipal admin.";
         }
-
-        elseif (!password_verify($password, $user['password'])) {
+    
+        /* PASSWORD CHECK */
+        elseif ($plain_password !== $user['plain_password']) {
             $message = "Invalid password!";
         }
-
+    
         else {
-
+    
+            /* UPDATE LAST ACTIVITY = USER ONLINE */
+            $update = $conn->prepare("UPDATE users SET last_activity = NOW() WHERE id = ?");
+            $update->execute([$user['id']]);
+    
             $_SESSION['user'] = $user;
-
+    
             if ($user['role'] === 'chairman') {
                 header("Location: chairperson/chairperson_dashboard.php");
-            } elseif ($user['role'] === 'secretary') {
+            } 
+            elseif ($user['role'] === 'secretary') {
                 header("Location: secretary/secretary_dashboard.php");
-            } elseif ($user['role'] === 'treasurer') {
+            } 
+            elseif ($user['role'] === 'treasurer') {
                 header("Location: treasurer/treasurer_dashboard.php");
-            } else {
-                header("Location: index.php");
+            } 
+            elseif ($user['role'] === 'municipal_admin') {
+                $_SESSION['admin'] = $user;
+                header("Location: admin/admin_dashboard.php");
+            } 
+            else {
+                $message = "Unknown account role.";
             }
-
+    
             exit();
         }
     }
@@ -209,15 +223,14 @@ h2{
 
     <form method="POST">
         <input type="text" name="username" placeholder="Username..." required>
-        <input type="password" name="password" placeholder="Password..." required>
+        <input type="password" name="plain_password" placeholder="Password..." required>
         <button type="submit">Log In</button>
     </form>
 
     <div class="error"><?php echo $message; ?></div>
 
     <div class="link">
-    No Account? <a href="auth/register.php">Register Here</a><br><br>
-    <a href="auth/forgot_password.php">Forgot Password?</a>
+    No Account? Please do visit our Municipality LGU office
 </div>
 </div>
 

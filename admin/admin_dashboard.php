@@ -15,15 +15,21 @@ function getCount($conn, $sql) {
 }
 
 $totalUsers = getCount($conn, "SELECT COUNT(*) FROM users");
-$pendingUsers = getCount($conn, "SELECT COUNT(*) FROM users WHERE status='pending'");
 $totalBarangays = getCount($conn, "SELECT COUNT(*) FROM barangays");
 $totalActivities = getCount($conn, "SELECT COUNT(*) FROM activities");
 $totalApprovedProjects = getCount($conn, "SELECT COUNT(*) FROM projects WHERE status='approved'");
 
-/* ================= LATEST BUDGET ================= */
-$totalBudget = getCount($conn, "SELECT COALESCE(SUM(total_amount),0) FROM budgets");
+/* ================= REALTIME ACTIVE / INACTIVE USERS ================= */
+/*
+    NOTE:
+    This assumes you have a column like:
+    users.status = 'active' or 'inactive'
+*/
 
-/* ================= CORRECT BARANGAY ANALYTICS ================= */
+$activeUsers = getCount($conn, "SELECT COUNT(*) FROM users WHERE status = 'active'");
+$inactiveUsers = getCount($conn, "SELECT COUNT(*) FROM users WHERE status = 'inactive'");
+
+/* ================= BARANGAY ANALYTICS ================= */
 $stmt = $conn->prepare("
     SELECT 
         b.id,
@@ -33,9 +39,7 @@ $stmt = $conn->prepare("
         COALESCE(act.total_activities,0) AS total_activities,
         COALESCE(act.used_amount,0) AS used_amount,
 
-        COALESCE(bg.total_amount,0) AS total_amount,
-
-        (COALESCE(bg.total_amount,0) - COALESCE(act.used_amount,0)) AS remaining_budget
+        (COALESCE(act.used_amount,0)) AS remaining_budget
 
     FROM barangays b
 
@@ -49,14 +53,6 @@ $stmt = $conn->prepare("
         GROUP BY barangay_id
     ) act ON act.barangay_id = b.id
 
-    LEFT JOIN (
-        SELECT DISTINCT ON (barangay_id)
-            barangay_id,
-            total_amount
-        FROM budgets
-        ORDER BY barangay_id, year DESC, id DESC
-    ) bg ON bg.barangay_id = b.id
-
     ORDER BY b.barangay_name ASC
 ");
 
@@ -66,15 +62,13 @@ $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
 /* ================= ML SCORE ================= */
 function mlScore($d) {
 
-    $participants = $d['total_participants'];
-    $activities = $d['total_activities'];
-    $budgetUsed = $d['used_amount'];
-    $budget = max($d['total_amount'], 1);
+    $participants = $d['total_participants'] ?? 0;
+    $activities = $d['total_activities'] ?? 0;
+    $budgetUsed = $d['used_amount'] ?? 0;
 
     $efficiency = ($budgetUsed > 0) ? ($participants / $budgetUsed) : 0;
-    $budgetRatio = $budgetUsed / $budget;
 
-    $score = ($efficiency * 50) + ($activities * 10) + ($budgetRatio * 40);
+    $score = ($efficiency * 60) + ($activities * 10);
 
     return min(100, round($score, 2));
 }
@@ -88,16 +82,19 @@ foreach ($data as $i => $d) {
 usort($data, fn($a,$b) => $b['ml_score'] <=> $a['ml_score']);
 
 $top = $data[0] ?? null;
-$lowest = $data[count($data)-1] ?? null;
+$lowest = end($data) ?: null;
 
 /* ================= AUDIT LOG ================= */
 $stmt = $conn->prepare("
-    SELECT a.action_type, a.action_time, u.username
+    SELECT 
+        a.action_type,
+        a.action_time,
+        a.username
     FROM audit_logs a
-    LEFT JOIN users u ON u.id = a.id
     ORDER BY a.action_time DESC
     LIMIT 10
 ");
+
 $stmt->execute();
 $auditLogs = $stmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
@@ -124,28 +121,46 @@ $auditLogs = $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
 
 .glass{
-    background: rgba(255,255,255,0.2);
-    backdrop-filter: blur(20px);
+    background: rgba(255,255,255,0.15);
+    backdrop-filter: blur(18px);
     border-radius: 15px;
     padding: 20px;
     margin-top:20px;
 }
 
-table{
+.footer{
     width:100%;
-    border-collapse:collapse;
-}
-
-th{
-    background:#1e3c72;
-    color:white;
-    padding:10px;
-}
-
-td{
-    padding:10px;
     text-align:center;
-    border-bottom:1px solid #ddd;
+    margin-top:25px;
+    padding:14px;
+    color:white;
+    background:rgba(0,0,0,0.25);
+    border-radius:10px;
+    font-size:13px;
+}
+
+h2{
+    text-align:center;
+    color:whitesmoke;
+    margin-bottom:20px;
+}
+
+h3{
+    color:white;
+}
+
+.card h2, p{
+    color:#1e3c72;
+}
+
+@media(max-width:768px){
+    .grid{
+        grid-template-columns:repeat(2,1fr);
+    }
+
+    .footer{
+        font-size:11px;
+    }
 }
 </style>
 </head>
@@ -167,23 +182,23 @@ td{
     </div>
 
     <div class="glass card">
-        <h3>Users</h3>
+        <h3>Total Users</h3>
         <h2><?= $totalUsers ?></h2>
     </div>
 
     <div class="glass card">
-        <h3>Pending</h3>
-        <h2><?= $pendingUsers ?></h2>
+        <h3>Active Users</h3>
+        <h2><?= $activeUsers ?></h2>
+    </div>
+
+    <div class="glass card">
+        <h3>Inactive Users</h3>
+        <h2><?= $inactiveUsers ?></h2>
     </div>
 
     <div class="glass card">
         <h3>Projects</h3>
         <h2><?= $totalApprovedProjects ?></h2>
-    </div>
-
-    <div class="glass card">
-        <h3>Budget</h3>
-        <h2>₱<?= number_format($totalBudget) ?></h2>
     </div>
 
 </div>
@@ -225,6 +240,10 @@ td{
 
 </div>
 
+<div class="footer">
+    © 2026 SK Decision Support System | Responsive Community Planning Platform
+</div>
+
 <script>
 const chartData = <?= json_encode($data) ?>;
 
@@ -232,23 +251,10 @@ new Chart(document.getElementById('chart'), {
     type: 'bar',
     data: {
         labels: chartData.map(x => x.barangay_name),
-
         datasets: [
             {
                 label: 'ML Score',
                 data: chartData.map(x => x.ml_score)
-            },
-            {
-                label: 'Participants',
-                data: chartData.map(x => x.total_participants)
-            },
-            {
-                label: 'Used Budget',
-                data: chartData.map(x => x.used_amount)
-            },
-            {
-                label: 'Remaining Budget',
-                data: chartData.map(x => x.remaining_budget)
             }
         ]
     },

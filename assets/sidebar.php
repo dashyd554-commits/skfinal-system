@@ -5,7 +5,7 @@
     <?php if (isset($_SESSION['admin'])) { ?>
 
     <a href="admin_dashboard.php">🏠 <span>Dashboard</span></a>
-    <a href="admin_pending.php">✅ <span>Approve User</span></a>
+    <a href="admin_pending.php">✅ <span>Add SK Officials</span></a>
     <a href="admin_barangay_monitoring.php">📊 <span>Barangay Monitoring</span></a>
     <a href="admin_officials_information.php">🧑‍💼 <span>Officials Information</span></a>
     <a href="admin_audit_log.php">🕘 <span>History / Audit Log</span></a>

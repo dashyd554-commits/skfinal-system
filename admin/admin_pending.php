@@ -8,22 +8,145 @@ if (!isset($_SESSION['admin'])) {
     exit();
 }
 
-/* ================= GET PENDING USERS ================= */
-$stmt = $conn->prepare("
-    SELECT u.*, b.barangay_name
-    FROM users u
-    LEFT JOIN barangays b ON u.barangay_id = b.id
-    WHERE u.status = 'pending'
-    ORDER BY u.id DESC
-");
+$message = "";
+$messageType = "";
+
+/* ================= AGE LIMIT ================= */
+$min_age = 15;
+$max_age = 30;
+
+/* ================= ADD OFFICIAL ================= */
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+
+    $fullname      = trim($_POST['fullname'] ?? '');
+    $age           = intval($_POST['age'] ?? 0);
+    $username      = trim($_POST['username'] ?? '');
+    $plain_password = trim($_POST['plain_password'] ?? '');
+    $role          = $_POST['role'] ?? '';
+    $barangay_id   = $_POST['barangay_id'] ?? null;
+
+    /* ================= VALIDATION ================= */
+
+    if ($age < $min_age || $age > $max_age) {
+        $message = "❌ Age must be between $min_age and $max_age.";
+        $messageType = "error";
+    }
+
+    elseif (!preg_match('/^(?=.*[A-Za-z])(?=.*\d).{8,}$/', $plain_password)) {
+        $message = "❌ Password must be at least 8 characters and contain letters and numbers.";
+        $messageType = "error";
+    }
+
+    else {
+
+        /* USERNAME DUPLICATE */
+        $stmt = $conn->prepare("SELECT 1 FROM users WHERE username = ?");
+        $stmt->execute([$username]);
+
+        if ($stmt->fetchColumn()) {
+            $message = "❌ Username already exists!";
+            $messageType = "error";
+        }
+
+        else {
+
+            /* FULLNAME DUPLICATE */
+            $stmt = $conn->prepare("SELECT 1 FROM users WHERE fullname = ?");
+            $stmt->execute([$fullname]);
+
+            if ($stmt->fetchColumn()) {
+                $message = "❌ Full name already exists!";
+                $messageType = "error";
+            }
+
+            else {
+
+                /* PASSWORD DUPLICATE */
+                $stmt = $conn->prepare("SELECT 1 FROM users WHERE plain_password = ?");
+                $stmt->execute([$plain_password]);
+
+                if ($stmt->fetchColumn()) {
+                    $message = "❌ Password already used!";
+                    $messageType = "error";
+                }
+
+                else {
+
+                    /* ONE ROLE PER BARANGAY CHECK */
+                    $stmt = $conn->prepare("
+                        SELECT 1 FROM users 
+                        WHERE barangay_id = ? AND role = ?
+                    ");
+                    $stmt->execute([$barangay_id, $role]);
+
+                    if ($stmt->fetchColumn()) {
+                        $message = "❌ This barangay already has a ".ucfirst($role).".";
+                        $messageType = "error";
+                    }
+
+                    else {
+
+                        /* ================= INSERT USER ================= */
+                        $stmt = $conn->prepare("
+                            INSERT INTO users
+                            (fullname, age, username, plain_password, role, barangay_id, status, last_activity)
+                            VALUES (?, ?, ?, ?, ?, ?, 'active', NOW())
+                        ");
+
+                        $inserted = $stmt->execute([
+                            $fullname,
+                            $age,
+                            $username,
+                            $plain_password,
+                            $role,
+                            $barangay_id
+                        ]);
+
+                        if ($inserted) {
+
+                            /* ================= GET BARANGAY NAME ================= */
+                            $barangayStmt = $conn->prepare("SELECT barangay_name FROM barangays WHERE id = ?");
+                            $barangayStmt->execute([$barangay_id]);
+                            $barangay_name = $barangayStmt->fetchColumn();
+
+                            /* ================= AUDIT LOG ================= */
+                            $log = "Admin created user {$fullname} ({$role})";
+
+                            $audit = $conn->prepare("
+                                INSERT INTO audit_logs
+                                (username, barangay_name, action_type, table_name, description)
+                                VALUES (?, ?, 'INSERT', 'users', ?)
+                            ");
+
+                            $audit->execute([
+                                'admin',
+                                $barangay_name,
+                                $log
+                            ]);
+
+                            $message = "✅ SK Official added successfully!";
+                            $messageType = "success";
+                        } else {
+                            $message = "❌ Failed to insert official.";
+                            $messageType = "error";
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/* ================= BARANGAYS ================= */
+$stmt = $conn->prepare("SELECT * FROM barangays ORDER BY barangay_name ASC");
 $stmt->execute();
-$users = $stmt->fetchAll(PDO::FETCH_ASSOC);
+$barangays = $stmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
 
 <!DOCTYPE html>
 <html>
 <head>
-<title>Admin Pending Users</title>
+<title>Add SK Officials</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <link rel="stylesheet" href="../assets/style.css">
@@ -37,140 +160,102 @@ $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
     font-family:Arial;
 }
 
-html,body{
-    width:100%;
-    overflow-x:hidden;
-}
-
 body{
     background:url('../assets/bg.jpg') no-repeat center center fixed;
     background-size:cover;
 }
 
-/* MAIN FIXED */
 .main{
     margin-left:190px;
     width:calc(100% - 190px);
     padding:20px;
-    min-height:100vh;
 }
 
-/* MOBILE FIX */
 @media(max-width:768px){
     .main{
         margin-left:0;
         width:100%;
-        padding:12px;
     }
 }
 
-/* HEADER */
 .header{
     text-align:center;
     color:white;
-    margin-bottom:25px;
+    margin-bottom:20px;
 }
 
-.header h2{
-    font-size:34px;
-    text-shadow:0 2px 8px rgba(0,0,0,0.4);
-}
-
-.header p{
-    margin-top:8px;
-    font-size:15px;
-}
-
-/* GLASS CONTAINER */
-.table-box{
-    width:100%;
+.form-box{
     background:rgba(255,255,255,0.15);
-    backdrop-filter:blur(18px);
+    backdrop-filter:blur(15px);
     padding:20px;
-    border-radius:18px;
-    box-shadow:0 4px 20px rgba(0,0,0,0.2);
-    overflow-x:auto;
+    border-radius:15px;
+    margin-bottom:20px;
 }
 
-/* TABLE */
-table{
+input, select{
     width:100%;
-    min-width:900px;
-    border-collapse:collapse;
-    background:rgba(255,255,255,0.96);
-    border-radius:12px;
-    overflow:hidden;
-}
-
-th{
-    background:#198754;
-    color:white;
-    padding:14px;
-    font-size:14px;
-}
-
-td{
-    padding:14px;
-    text-align:center;
-    border-bottom:1px solid #ddd;
-    font-size:14px;
-}
-
-tr:hover{
-    background:#f2f2f2;
-}
-
-/* BADGE */
-.badge{
-    background:orange;
-    color:white;
-    padding:5px 10px;
-    border-radius:20px;
-    font-size:11px;
-    font-weight:bold;
-}
-
-/* BUTTONS */
-.action-btn{
-    display:inline-block;
-    padding:7px 14px;
+    padding:10px;
+    margin:8px 0;
+    border:none;
     border-radius:8px;
-    text-decoration:none;
+}
+
+button{
+    width:100%;
+    padding:10px;
+    background:#1e3c72;
     color:white;
-    font-size:12px;
+    border:none;
+    border-radius:8px;
+    cursor:pointer;
     font-weight:bold;
-    margin:2px;
 }
 
-.approve{
-    background:#198754;
+button:hover{
+    opacity:0.9;
 }
 
-.reject{
-    background:#dc3545;
-}
-
-.action-btn:hover{
-    opacity:0.85;
-}
-
-/* EMPTY */
-.empty{
-    text-align:center;
-    color:white;
-    padding:40px;
-    font-size:18px;
-}
-
-/* FOOTER */
-.footer{
-    margin-top:25px;
-    text-align:center;
-    color:white;
-    font-size:13px;
-    background:rgba(0,0,0,0.25);
+.message{
     padding:12px;
+    border-radius:8px;
+    font-weight:bold;
+    margin-bottom:10px;
+    text-align:center;
+}
+
+.message.success{
+    background:#d1e7dd;
+    color:#0f5132;
+    border:1px solid #badbcc;
+}
+
+.message.error{
+    background:#f8d7da;
+    color:#842029;
+    border:1px solid #f5c2c7;
+}
+
+.footer{
+    width:100%;
+    text-align:center;
+    margin-top:25px;
+    padding:14px;
+    color:white;
+    background:rgba(0,0,0,0.25);
     border-radius:10px;
+    font-size:13px;
+}
+
+html, body{
+    overflow-x:hidden;
+}
+
+@media(max-width:768px){
+    .footer{
+        font-size:11px;
+        padding:10px;
+        margin-bottom:10px;
+    }
 }
 </style>
 </head>
@@ -181,64 +266,55 @@ tr:hover{
 
 <div class="main">
 
-    <div class="header">
-        <h2>👮 Pending User Approval Registry</h2>
-        <p>Administrator Approval of Newly Registered SK Officials</p>
+<div class="header">
+    <h2>👮 Add SK Officials</h2>
+    <p>Admin-controlled creation of municipal SK officials</p>
+</div>
+
+<?php if(!empty($message)) { ?>
+    <div class="message <?= $messageType ?>">
+        <?= $message ?>
     </div>
+<?php } ?>
 
-    <?php if($users){ ?>
+<div class="form-box">
 
-    <div class="table-box">
-        <table>
-            <tr>
-                <th>Full Name</th>
-                <th>Email</th>
-                <th>Username</th>
-                <th>Role</th>
-                <th>Barangay</th>
-                <th>Status</th>
-                <th>Action</th>
-            </tr>
+<form method="POST">
 
-            <?php foreach($users as $u){ ?>
-            <tr>
-                <td><?= htmlspecialchars($u['fullname'] ?? 'N/A') ?></td>
-                <td><?= htmlspecialchars($u['email'] ?? 'N/A') ?></td>
-                <td><?= htmlspecialchars($u['username']) ?></td>
-                <td><?= ucfirst(htmlspecialchars($u['role'])) ?></td>
-                <td><?= htmlspecialchars($u['barangay_name'] ?? 'N/A') ?></td>
-                <td><span class="badge"><?= strtoupper($u['status']) ?></span></td>
-                <td>
-                    <a class="action-btn approve"
-                       href="admin_approve_user.php?id=<?= $u['id'] ?>"
-                       onclick="return confirm('Approve this user account?')">
-                       ✔ Approve
-                    </a>
+    <input type="text" name="fullname" placeholder="Full Name" required>
 
-                    <a class="action-btn reject"
-                       href="admin_reject_user.php?id=<?= $u['id'] ?>"
-                       onclick="return confirm('Reject this user account?')">
-                       ✖ Reject
-                    </a>
-                </td>
-            </tr>
-            <?php } ?>
+    <input type="number" name="age" placeholder="Age" required>
 
-        </table>
-    </div>
+    <input type="text" name="username" placeholder="Username" required>
 
-    <?php } else { ?>
+    <input type="text" name="plain_password" placeholder="Password" required>
 
-        <div class="table-box empty">
-            ✅ No pending user accounts found.
-        </div>
+    <select name="role" required>
+        <option value="">Select Role</option>
+        <option value="chairman">Chairman</option>
+        <option value="secretary">Secretary</option>
+        <option value="treasurer">Treasurer</option>
+    </select>
 
-    <?php } ?>
+    <select name="barangay_id" required>
+        <option value="">Select Barangay</option>
+        <?php foreach($barangays as $b){ ?>
+            <option value="<?= $b['id'] ?>">
+                <?= htmlspecialchars($b['barangay_name']) ?>
+            </option>
+        <?php } ?>
+    </select>
 
-    <div class="footer">
-        © 2026 SK Decision Support System | Pending User Approval Management
-    </div>
+    <button type="submit">➕ Add Official</button>
 
+</form>
+
+</div>
+
+</div>
+
+<div class="footer">
+    © 2026 SK Decision Support System | Responsive Community Planning Platform
 </div>
 
 </body>
