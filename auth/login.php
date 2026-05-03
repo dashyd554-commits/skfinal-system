@@ -10,7 +10,7 @@ if (empty($username) || empty($password)) {
     die("Please enter username and password.");
 }
 
-/* ================= GET USER WITH BARANGAY ================= */
+/* ================= GET USER ================= */
 $stmt = $conn->prepare("
     SELECT u.*, b.barangay_name
     FROM users u
@@ -25,15 +25,22 @@ if (!$user) {
     die("User not found");
 }
 
-if ($user['status'] !== 'approved') {
-    die("Account not approved by admin.");
+/* 1. CHECK EMAIL VERIFIED (OTP STEP) */
+if ($user['is_verified'] != 1) {
+    die("Please verify your email first.");
 }
 
+/* 2. CHECK ADMIN APPROVAL */
+if ($user['status'] !== 'approved') {
+    die("Account not yet approved by admin.");
+}
+
+/* 3. PASSWORD CHECK */
 if (!password_verify($password, $user['password'])) {
     die("Invalid password");
 }
 
-/* ================= SAVE SESSION ================= */
+/* ================= SESSION ================= */
 $_SESSION['user'] = [
     'id' => $user['id'],
     'username' => $user['username'],
@@ -42,7 +49,7 @@ $_SESSION['user'] = [
     'barangay_name' => $user['barangay_name']
 ];
 
-/* ================= REDIRECT BY ROLE ================= */
+/* ================= REDIRECT ================= */
 if ($user['role'] === 'chairman') {
     header("Location: ../chairperson/chairperson_dashboard.php");
     exit();

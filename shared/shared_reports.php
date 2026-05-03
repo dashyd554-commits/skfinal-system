@@ -36,10 +36,11 @@ $stmt = $conn->prepare("
 $stmt->execute([':barangay_id' => $barangay_id]);
 $rejected = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
-/* ================= BUDGET UTILIZATION (FIXED) ================= */
+/* ================= BUDGET UTILIZATION ================= */
 $stmt = $conn->prepare("
     SELECT 
         b.total_amount,
+        b.remaining_budget,
         COALESCE(SUM(bt.amount),0) AS used_amount
     FROM budgets b
     LEFT JOIN budget_transactions bt 
@@ -48,20 +49,20 @@ $stmt = $conn->prepare("
       AND b.id = (
           SELECT MAX(id)
           FROM budgets b2
-          WHERE b2.barangay_id = :barangay_id_2
+          WHERE b2.barangay_id = :barangay_id2
       )
-    GROUP BY b.total_amount
+    GROUP BY b.total_amount, b.remaining_budget
 ");
 $stmt->execute([
     ':barangay_id' => $barangay_id,
-    ':barangay_id_2' => $barangay_id
+    ':barangay_id2' => $barangay_id
 ]);
 
 $budget = $stmt->fetch(PDO::FETCH_ASSOC);
 
 $totalBudget = $budget['total_amount'] ?? 0;
 $usedBudget = $budget['used_amount'] ?? 0;
-$remaining = $totalBudget - $usedBudget;
+$remaining = $budget['remaining_budget'] ?? ($totalBudget - $usedBudget);
 
 /* ================= PARTICIPATION TREND ================= */
 $stmt = $conn->prepare("
@@ -71,6 +72,7 @@ $stmt = $conn->prepare("
         COALESCE(budget_requested,0) AS budget
     FROM projects
     WHERE barangay_id = :barangay_id
+    AND status != 'cancelled'
     ORDER BY id DESC
     LIMIT 10
 ");
@@ -85,38 +87,30 @@ $stmt = $conn->prepare("
         SUM(CASE WHEN status='rejected' THEN 1 ELSE 0 END) AS rejected_projects
     FROM projects
     WHERE barangay_id = :barangay_id
+    AND status != 'cancelled'
 ");
 $stmt->execute([':barangay_id' => $barangay_id]);
 $performance = $stmt->fetch(PDO::FETCH_ASSOC);
 
-/* ================= SK COUNCIL VOTE TALLY (FIXED) ================= */
+/* ================= VOTING ================= */
 $stmt = $conn->prepare("
     SELECT 
         p.id,
         p.name,
-        p.purpose,
-        p.budget_requested,
-        p.status,
-        p.created_at,
-
-        COALESCE(SUM(CASE WHEN cv.vote = 'yes' THEN 1 ELSE 0 END),0) AS vote_yes,
-        COALESCE(SUM(CASE WHEN cv.vote = 'no' THEN 1 ELSE 0 END),0) AS vote_no
-
+        COALESCE(SUM(CASE WHEN cv.vote='yes' THEN 1 ELSE 0 END),0) AS vote_yes,
+        COALESCE(SUM(CASE WHEN cv.vote='no' THEN 1 ELSE 0 END),0) AS vote_no
     FROM projects p
     LEFT JOIN council_votes cv ON p.id = cv.project_id
-
     WHERE p.barangay_id = :bid
     AND p.created_by = :uid
-
+    AND p.status != 'cancelled'
     GROUP BY p.id
     ORDER BY p.created_at DESC
 ");
-
 $stmt->execute([
     ':bid' => $barangay_id,
     ':uid' => $user_id
 ]);
-
 $voting = $stmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
 
@@ -135,45 +129,60 @@ body{
     margin:0;
     background:url('../assets/bg.jpg') no-repeat center center fixed;
     background-size:cover;
+    font-family:Arial;
 }
 
 .main{
     margin-left:190px;
     padding:20px;
     width:calc(100% - 200px);
-    overflow-x:hidden;
 }
 
 .header h2{
-    color:#fff;
+    color:white;
+    text-align:center;
     margin-bottom:20px;
 }
 
+/* KPI BALANCED ROWS */
 .grid{
-    display:grid;
-    grid-template-columns:repeat(4,1fr);
+    display:flex;
+    flex-direction:column;
     gap:15px;
-    margin-bottom:20px;
+}
+
+.row{
+    display:flex;
+    gap:15px;
+}
+
+.row.top .glass{
+    flex:1;
+}
+
+.row.bottom{
+    justify-content:center;
+}
+
+.row.bottom .glass{
+    width:250px;
 }
 
 .glass{
-    background:rgba(255,255,255,0.35);
-    backdrop-filter:blur(30px);
+    background:rgba(255,255,255,0.15);
+    backdrop-filter:blur(18px);
     border-radius:15px;
-    box-shadow:0 8px 25px rgba(0,0,0,0.15);
     padding:20px;
+    color:#fff;
+    box-shadow:0 8px 25px rgba(0,0,0,0.2);
     margin-bottom:20px;
 }
 
-.card{
-    text-align:center;
-}
-
-.card h3{margin:0;color:#333;}
-.card h2{margin-top:10px;color:#111;}
+.card{text-align:center;}
+.card h2{color:#1e3c72;}
 
 .section-title{
-    color:#1e3c72;
+    color:white;
     margin-bottom:10px;
 }
 
@@ -192,21 +201,40 @@ th{
 td{
     padding:10px;
     text-align:center;
-    border-bottom:1px solid #ccc;
+    border-bottom:1px solid rgba(255,255,255,0.2);
+    color:#1e3c72;
 }
 
-@media(max-width:1100px){
-    .grid{grid-template-columns:repeat(2,1fr);}
+p{
+    color:#1e3c72;
+    line-height:1.8;
+}
+
+h3{
+    color:white;
 }
 
 @media(max-width:768px){
     .main{
-        margin-left:70px;
-        width:calc(100% - 80px);
+        margin-left:0;
+        width:100%;
+        padding:10px;
     }
-    .grid{grid-template-columns:1fr;}
+
+    .row{
+        flex-direction:column;
+    }
+
+    .row.bottom{
+        align-items:center;
+    }
+
+    .row.bottom .glass{
+        width:100%;
+    }
 }
 </style>
+
 </head>
 
 <body>
@@ -221,24 +249,35 @@ td{
 
     <div class="grid">
 
-        <div class="glass card">
-            <h3>✅ Approved Projects</h3>
-            <h2><?= count($approved) ?></h2>
+        <!-- TOP ROW -->
+        <div class="row top">
+            <div class="glass card">
+                <h3>✅ Approved Projects</h3>
+                <h2><?= count($approved) ?></h2>
+            </div>
+
+            <div class="glass card">
+                <h3>❌ Rejected Projects</h3>
+                <h2><?= count($rejected) ?></h2>
+            </div>
+
+            <div class="glass card">
+                <h3>💰 Total Budget</h3>
+                <h2>₱<?= number_format($totalBudget,2) ?></h2>
+            </div>
         </div>
 
-        <div class="glass card">
-            <h3>❌ Rejected Projects</h3>
-            <h2><?= count($rejected) ?></h2>
-        </div>
+        <!-- BOTTOM ROW -->
+        <div class="row bottom">
+            <div class="glass card">
+                <h3>💸 Used Budget</h3>
+                <h2>₱<?= number_format($usedBudget,2) ?></h2>
+            </div>
 
-        <div class="glass card">
-            <h3>💰 Total Budget</h3>
-            <h2>₱<?= number_format($totalBudget,2) ?></h2>
-        </div>
-
-        <div class="glass card">
-            <h3>📉 Remaining Budget</h3>
-            <h2>₱<?= number_format($remaining,2) ?></h2>
+            <div class="glass card">
+                <h3>📉 Remaining Budget</h3>
+                <h2>₱<?= number_format($remaining,2) ?></h2>
+            </div>
         </div>
 
     </div>
@@ -246,7 +285,7 @@ td{
     <div class="glass">
         <h3 class="section-title">Approved Projects Report</h3>
         <table>
-            <tr><th>Project Name</th><th>Budget Approved</th><th>Status</th></tr>
+            <tr><th>Project Name</th><th>Budget</th><th>Status</th></tr>
             <?php foreach($approved as $a){ ?>
             <tr>
                 <td><?= htmlspecialchars($a['name']) ?></td>
@@ -260,7 +299,7 @@ td{
     <div class="glass">
         <h3 class="section-title">Rejected Projects Report</h3>
         <table>
-            <tr><th>Project Name</th><th>Budget Requested</th><th>Status</th></tr>
+            <tr><th>Project Name</th><th>Budget</th><th>Status</th></tr>
             <?php foreach($rejected as $r){ ?>
             <tr>
                 <td><?= htmlspecialchars($r['name']) ?></td>

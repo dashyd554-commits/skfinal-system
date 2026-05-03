@@ -37,20 +37,29 @@ $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
 table{
     width:100%;
-    background: rgba(255,255,255,0.2);
-    backdrop-filter: blur(500px);
-    border-radius: 15px;
-    padding: 20px;
+    background:rgba(255,255,255,0.15);
+    backdrop-filter:blur(18px);
+    border-radius:15px;
+    padding:20px;
+    color:#fff;
+    box-shadow:0 8px 25px rgba(0,0,0,0.2);
+    margin-bottom: 20px;
 }
 th{
-    background:#333;
+    background:#1e3c72;
     color:white;
-    padding:10px;
+    padding:12px;
 }
 td{
     padding:10px;
     text-align:center;
+    color:#1e3c72;
     }
+h2{
+    color: whitesmoke;
+    text-align: center;
+    margin-bottom: 20px;
+}
 </style>
 </head>
 <body>

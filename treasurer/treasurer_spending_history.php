@@ -61,20 +61,23 @@ h2{
 }
 
 .box{
-    background:rgba(255,255,255,0.6);
-    backdrop-filter:blur(20px);
+    background:rgba(255,255,255,0.15);
+    backdrop-filter:blur(18px);
+    border-radius:15px;
     padding:20px;
-    margin-bottom:20px;
-    border-radius:12px;
-    box-shadow:0 5px 20px rgba(0,0,0,0.1);
+    color:#fff;
+    box-shadow:0 8px 25px rgba(0,0,0,0.2);
+    margin-bottom: 20px;
 }
 
 table{
     width:100%;
     border-collapse:collapse;
-    background:rgba(255,255,255,0.6);
-    border-radius:12px;
+    background:rgba(255,255,255,0.15);
+    backdrop-filter:blur(18px);
+    border-radius:15px;
     overflow:hidden;
+    color: #fff;
 }
 
 th{
@@ -87,12 +90,13 @@ td{
     padding:10px;
     text-align:center;
     border-bottom:1px solid #ddd;
+    color: #1e3c72;
 }
 
 .empty{
     text-align:center;
     padding:20px;
-    color:#666;
+    color:white;
 }
 
 @media(max-width:768px){
@@ -100,6 +104,40 @@ td{
         margin-left:70px;
         width:100%;
     }
+}
+h2{
+    text-align: center;
+    color: whitesmoke;
+    margin-bottom: 20px;
+}
+.totalSpent{
+color: #1e3c72;
+}
+/* ================= MOBILE RESPONSIVE ================= */
+@media screen and (max-width:768px){
+
+.main{
+    margin-left:0;
+    width:100%;
+    padding:10px;
+}
+
+.form-container{
+    margin:20px auto;
+    width:100%;
+}
+
+table, th, td{
+    font-size:12px;
+}
+
+h2{
+    font-size:18px;
+}
+
+h3{
+    font-size:16px;
+}
 }
 </style>
 </head>
@@ -113,7 +151,10 @@ td{
 <h2>💸 History of Spending / Approved Disbursement</h2>
 
 <div class="box">
-    <h3>Total Approved Spending: ₱<?= number_format($totalSpent,2) ?></h3>
+<h3>
+    Total Approved Spending:
+    <span class="totalSpent">₱<?= number_format($totalSpent,2) ?></span>
+</h3>
 </div>
 
 <table>

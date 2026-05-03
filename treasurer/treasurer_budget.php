@@ -125,16 +125,19 @@ body{
 }
 
 .glass{
-    background:rgba(255,255,255,0.35);
-    backdrop-filter:blur(30px);
+    background:rgba(255,255,255,0.15);
+    backdrop-filter:blur(18px);
     border-radius:15px;
-    box-shadow:0 8px 25px rgba(0,0,0,0.08);
     padding:20px;
+    color:#fff;
+    box-shadow:0 8px 25px rgba(0,0,0,0.2);
     margin-bottom:20px;
 }
 
 .form-container{
     max-width:500px;
+    margin-top: 50px;
+    margin-left: 380px;
 }
 
 input{
@@ -194,6 +197,36 @@ td{
     padding:10px;
     text-align:center;
     border-bottom:1px solid #ddd;
+}
+h2{
+    color: whitesmoke;
+    text-align: center;
+}
+/* ================= MOBILE RESPONSIVE ================= */
+@media screen and (max-width:768px){
+
+    .main{
+        margin-left:0;
+        width:100%;
+        padding:10px;
+    }
+
+    .form-container{
+        margin:20px auto;
+        width:100%;
+    }
+
+    table, th, td{
+        font-size:12px;
+    }
+
+    h2{
+        font-size:18px;
+    }
+
+    h3{
+        font-size:16px;
+    }
 }
 </style>
 

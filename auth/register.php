@@ -1,5 +1,7 @@
 <?php
 include '../config/db.php';
+require '../vendor/autoload.php';
+require '../config/mail.php';
 
 $message = "";
 
@@ -10,6 +12,9 @@ $barangays = $brgyStmt->fetchAll(PDO::FETCH_ASSOC);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
+    $fullname = trim($_POST['fullname'] ?? '');
+    $age = intval($_POST['age'] ?? 0);
+    $email = trim($_POST['email'] ?? '');
     $username = trim($_POST['username'] ?? '');
     $passwordRaw = trim($_POST['password'] ?? '');
     $confirmPassword = trim($_POST['confirm_password'] ?? '');
@@ -17,12 +22,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $barangay_id = trim($_POST['barangay_id'] ?? '');
 
     /* ================= VALIDATION ================= */
-    if (!$username || !$passwordRaw || !$confirmPassword || !$role || !$barangay_id) {
+
+    if (!$fullname || !$age || !$email || !$username || !$passwordRaw || !$confirmPassword || !$role || !$barangay_id) {
         $message = "⚠️ All fields are required!";
     }
 
-    elseif (!filter_var($username, FILTER_VALIDATE_EMAIL)) {
-        $message = "❌ Username must be a valid email!";
+    elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        $message = "❌ Invalid email format!";
+    }
+
+    elseif ($age < 15 || $age > 30) {
+        $message = "❌ SK age requirement is 15–30 years old!";
     }
 
     elseif (strlen($passwordRaw) < 8) {
@@ -36,8 +46,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     else {
 
         /* CHECK EMAIL EXISTS */
-        $stmt = $conn->prepare("SELECT id FROM users WHERE username = ?");
-        $stmt->execute([$username]);
+        $stmt = $conn->prepare("SELECT id FROM users WHERE email = ?");
+        $stmt->execute([$email]);
 
         if ($stmt->fetch()) {
             $message = "❌ Email already registered!";
@@ -45,7 +55,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         else {
 
-            /* CHECK ONE ROLE PER BARANGAY ONLY */
+            /* CHECK ROLE PER BARANGAY */
             $stmt = $conn->prepare("
                 SELECT id FROM users
                 WHERE barangay_id = ? AND role = ?
@@ -53,30 +63,57 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt->execute([$barangay_id, $role]);
 
             if ($stmt->fetch()) {
-                $message = "❌ This barangay already has one registered " . ucfirst($role) . "!";
+                $message = "❌ This barangay already has this role!";
             }
 
             else {
 
-                /* HASH PASSWORD */
+                /* OTP GENERATION */
+                $otp = rand(100000, 999999);
+                $expiry = date('Y-m-d H:i:s', strtotime('+10 minutes'));
+
                 $hashedPassword = password_hash($passwordRaw, PASSWORD_DEFAULT);
 
                 /* INSERT USER */
                 $stmt = $conn->prepare("
-                    INSERT INTO users (username, password, role, status, barangay_id)
-                    VALUES (?, ?, ?, 'pending', ?)
+                    INSERT INTO users 
+                    (fullname, username, password, role, barangay_id, status, email, verification_code, verification_expiry, is_verified, age)
+                    VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, 0, ?)
                 ");
 
-                if ($stmt->execute([$username, $hashedPassword, $role, $barangay_id])) {
+                $insert = $stmt->execute([
+                    $fullname,
+                    $username,
+                    $hashedPassword,
+                    $role,
+                    $barangay_id,
+                    $email,
+                    $otp,
+                    $expiry,
+                    $age
+                ]);
+
+                if ($insert) {
+
+                    /* SEND EMAIL OTP (ONLY HERE) */
+                    $subject = "SK Verification Code";
+                    $body = "
+                        <h3>Welcome to SK System</h3>
+                        <p>Your verification code is:</p>
+                        <h2 style='color:#4f6ef7;'>$otp</h2>
+                        <p>This code will expire in 10 minutes.</p>
+                    ";
+
+                    sendEmail($email, $subject, $body);
 
                     echo "<script>
-                            alert('✅ Registered Successfully! Wait for admin approval.');
-                            window.location='../index.php';
-                          </script>";
+                        alert('✅ Registered successfully! Check your email for OTP.');
+                        window.location='verify.php';
+                    </script>";
                     exit();
 
                 } else {
-                    $message = '❌ Registration failed!';
+                    $message = "❌ Registration failed!";
                 }
             }
         }
@@ -92,96 +129,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <link rel="stylesheet" href="../assets/style.css">
 
 <style>
-.container{
-    display:flex;
-    justify-content:center;
-    align-items:center;
-    min-height:100vh;
-}
-.register-box{
-    width:400px;
-    padding:25px;
-    background:white;
-    border-radius:12px;
-    box-shadow:0 0 15px rgba(0,0,0,0.1);
-}
-input,select{
-    width:100%;
-    padding:12px;
-    margin-bottom:12px;
-    border:1px solid #ccc;
-    border-radius:8px;
-}
-button{
-    width:100%;
-    padding:12px;
-    border:none;
-    border-radius:8px;
-    background:#4f6ef7;
-    color:white;
-    cursor:pointer;
-}
-button:hover{
-    background:#3656d4;
-}
-.message{
-    text-align:center;
-    margin-top:10px;
-    font-size:14px;
-    font-weight:bold;
-    color:#dc3545;
-}
-a{
-    display:block;
-    text-align:center;
-    margin-top:12px;
-    text-decoration:none;
-}
+.container{display:flex;justify-content:center;align-items:center;min-height:100vh;}
+.register-box{width:420px;padding:25px;background:white;border-radius:12px;box-shadow:0 0 15px rgba(0,0,0,0.1);}
+input,select{width:100%;padding:12px;margin-bottom:10px;border:1px solid #ccc;border-radius:8px;}
+button{width:100%;padding:12px;border:none;border-radius:8px;background:#4f6ef7;color:white;}
+.message{text-align:center;margin-top:10px;color:red;}
 </style>
 </head>
 
 <body>
 
 <div class="container">
+<div class="register-box">
 
-    <div class="register-box">
+<h2>📝 SK Officer Registration</h2>
 
-        <h2 style="text-align:center;">📝 SK Officer Registration</h2>
+<form method="POST">
 
-        <form method="POST">
+<input type="text" name="fullname" placeholder="Full Name" required>
+<input type="number" name="age" placeholder="Age (15–30)" required>
+<input type="email" name="email" placeholder="Email (for verification)" required>
+<input type="text" name="username" placeholder="Username" required>
+<input type="password" name="password" placeholder="Password" required>
+<input type="password" name="confirm_password" placeholder="Confirm Password" required>
 
-            <input type="email" name="username" placeholder="Email Address" required>
+<select name="barangay_id" required>
+    <option value="">Select Barangay</option>
+    <?php foreach($barangays as $b){ ?>
+        <option value="<?= $b['id'] ?>">
+            <?= htmlspecialchars($b['barangay_name']) ?>
+        </option>
+    <?php } ?>
+</select>
 
-            <input type="password" name="password" placeholder="Password" required>
+<select name="role" required>
+    <option value="">Select Role</option>
+    <option value="chairman">Chairman</option>
+    <option value="secretary">Secretary</option>
+    <option value="treasurer">Treasurer</option>
+</select>
 
-            <input type="password" name="confirm_password" placeholder="Confirm Password" required>
+<button type="submit">Register</button>
 
-            <select name="barangay_id" required>
-                <option value="">Select Barangay</option>
-                <?php foreach($barangays as $b){ ?>
-                    <option value="<?= $b['id'] ?>">
-                        <?= htmlspecialchars($b['barangay_name']) ?>
-                    </option>
-                <?php } ?>
-            </select>
+</form>
 
-            <select name="role" required>
-                <option value="">Select Role</option>
-                <option value="chairman">Chairman</option>
-                <option value="secretary">Secretary</option>
-                <option value="treasurer">Treasurer</option>
-            </select>
+<div class="message"><?= $message ?></div>
 
-            <button type="submit">Register</button>
+<a href="../index.php">← Back to Login</a>
 
-        </form>
-
-        <div class="message"><?= $message ?></div>
-
-        <a href="../index.php">← Back to Login</a>
-
-    </div>
-
+</div>
 </div>
 
 </body>

@@ -36,13 +36,13 @@ $projects = $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
 table { 
     width:100%;
-    background: rgba(255,255,255,0.2);
-    backdrop-filter: blur(500px);
+    background:rgba(255,255,255,0.15);
+    backdrop-filter:blur(18px);
     border-radius: 15px;
     padding: 20px;
 }
 th { 
-    background:#007bff; 
+    background:#1e3c72; 
     color:white; 
     padding:10px; 
 }
@@ -50,6 +50,7 @@ td {
      padding:10px; 
      text-align:center; 
      border-bottom:1px solid #ddd; 
+     color: #1e3c72;
     }
 .btn { 
     padding:6px 10px; 
@@ -58,6 +59,11 @@ td {
     text-decoration:none; 
     border-radius:5px; 
     }
+h2{
+    text-align: center;
+    color: whitesmoke;
+    margin-bottom: 20px;
+}
 </style>
 </head>
 <body>

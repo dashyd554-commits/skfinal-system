@@ -125,45 +125,54 @@ body{
     background:url('../assets/bg.jpg') no-repeat center center fixed;
     background-size:cover;
 
-    /* CENTER EVERYTHING */
     display:flex;
     justify-content:center;
     align-items:center;
     min-height:100vh;
 }
 
-/* MAIN CONTAINER */
 .container{
     width:100%;
     max-width:600px;
     padding:20px;
 }
 
-/* TITLE */
-h2, h3{
-    background:rgba(255,255,255,0.25);
-    backdrop-filter:blur(500px);
-    -webkit-backdrop-filter:blur(500px);
-    border-radius:15px;
-    padding:15px;
-    margin-bottom:15px;
-    text-align:center;
-    box-shadow:0 8px 25px rgba(0,0,0,0.2);
+.back-btn{
+    display:inline-block;
+    margin-bottom:20px;
+    padding:10px 18px;
+    background:#1e3c72;
+    color:white;
+    text-decoration:none;
+    border-radius:8px;
+    font-weight:bold;
 }
 
-/* GLASS CARD */
+.back-btn:hover{
+    background:#16305d;
+}
+
+h2{
+    color: whitesmoke;
+    text-align:center;
+}
+h3{
+    color: whitesmoke;
+    margin-bottom:20px;
+    text-align:center;
+}
+
 .card{
-    background:rgba(255,255,255,0.25);
-    backdrop-filter:blur(500px);
-    -webkit-backdrop-filter:blur(500px);
+    background:rgba(255,255,255,0.15);
+    backdrop-filter:blur(18px);
     border-radius:15px;
     padding:15px;
-    margin-bottom:15px;
-    text-align:center;
+    margin-bottom:20px;
+    text-align:start;
     box-shadow:0 8px 25px rgba(0,0,0,0.2);
+    color:#1e3c72;
 }
 
-/* SELECT */
 select{
     width:100%;
     padding:10px;
@@ -173,24 +182,23 @@ select{
     margin-top:10px;
 }
 
-/* BUTTON */
 button{
     width:100%;
     padding:12px;
-    background:#007bff;
+    background:#1e3c72;
     color:white;
     border:none;
     border-radius:10px;
     cursor:pointer;
     font-size:16px;
     margin-top:10px;
+    margin-bottom: 20px;
 }
 
 button:hover{
     background:#0056b3;
 }
 
-/* RESPONSIVE */
 @media(max-width:600px){
     .container{
         padding:10px;
@@ -224,6 +232,7 @@ button:hover{
 <?php } ?>
 
 <button type="submit">Submit Votes</button>
+<a href="secretary_pending.php" class="back-btn">← Back</a>
 
 </form>
 

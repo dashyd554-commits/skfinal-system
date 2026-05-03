@@ -137,6 +137,9 @@ foreach ($projects as $p) {
 <link rel="stylesheet" href="../assets/sbstyle.css">
 
 <style>
+main{
+    align-content: center;
+}
 table{
     width:100%;
     border-collapse:collapse;
@@ -163,6 +166,7 @@ td{
     border-radius:15px;
     padding:20px;
     margin-top:20px;
+    align-self: center;
 }
 </style>
 </head>

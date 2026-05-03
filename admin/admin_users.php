@@ -222,7 +222,7 @@ tr:hover {
                 </td>
 
                 <td>
-                    <a href="delete.php?id=<?= $row['id']; ?>"
+                    <a href="admin_delete.php?id=<?= $row['id']; ?>"
                        onclick="return confirm('Delete this user?')">
                         Delete
                     </a>

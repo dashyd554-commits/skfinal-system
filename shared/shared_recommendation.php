@@ -82,52 +82,93 @@ if ($http_code == 200 && $response) {
 <style>
 body{
     margin:0;
-    background:#f4f6f9;
+    background:url('../assets/bg.jpg') no-repeat center center fixed;
+    background-size:cover;
+    font-family:Arial;
 }
 
+/* MAIN LAYOUT */
 .main{
     margin-left:190px;
     padding:25px;
-    width:calc(100% - 200px);
+    width:calc(100% - 190px);
 }
 
-.card{
-    background:rgba(255,255,255,0.8);
-    backdrop-filter:blur(12px);
-    border-radius:12px;
-    padding:20px;
-    margin-bottom:20px;
-    box-shadow:0 5px 15px rgba(0,0,0,0.1);
-}
-
+/* HEADERS */
 h2{
     text-align:center;
-    color:#1e3c72;
+    color:#ffffff;
+    margin-bottom:20px;
 }
 
 h3{
+    color:#ffffff;
     margin-bottom:10px;
-    color:#333;
 }
 
+/* CARDS */
+.card{
+    background: rgba(255,255,255,0.08);
+    backdrop-filter: blur(18px);
+    border-radius:14px;
+    padding:20px;
+    margin-bottom:20px;
+    box-shadow:0 8px 20px rgba(0,0,0,0.25);
+    border:1px solid rgba(255,255,255,0.1);
+}
+
+/* TEXT */
 p{
-    margin:5px 0;
+    margin:6px 0;
     font-size:15px;
+    color:#1e3c72;
 }
 
+/* ML BOX */
 .ml-box{
-    background:#e8f4ff;
-    border-left:5px solid #1e3c72;
+    background: rgba(255,255,255,0.12);
+    border-left:5px solid #60a5fa;
     padding:15px;
     border-radius:10px;
+    margin-top:10px;
 }
 
+/* STRONG TEXT */
+b{
+    color:#ffffff;
+}
+
+/* ERROR TEXT */
+.error{
+    color:#ff6b6b;
+}
+
+/* SIDEBAR RESPONSIVE FIX */
 @media(max-width:768px){
     .main{
-        margin-left:70px;
-        width:calc(100% - 80px);
+        margin-left:0;
+        width:100%;
+        padding:15px;
+    }
+
+    h2{
+        font-size:18px;
+    }
+
+    h3{
+        font-size:16px;
+    }
+
+    p{
+        font-size:13px;
+        color:#1e3c72 ;
+    }
+
+    .card{
+        padding:15px;
     }
 }
+</style>
 </style>
 
 </head>

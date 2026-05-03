@@ -12,7 +12,18 @@ $id = $_GET['id'] ?? null;
 if (!$id) {
     die("Invalid request");
 }
+require '../config/mail.php';
 
+$stmt = $conn->prepare("SELECT email FROM users WHERE id = ?");
+$stmt->execute([$id]);
+$user = $stmt->fetch();
+
+
+sendEmail(
+    $user['email'],
+    "Account Approved",
+    "<h3>Congratulations!</h3><p>Your SK account has been approved by admin.</p>"
+);
 /* ================= GET USER INFO FIRST ================= */
 $stmt = $conn->prepare("
     SELECT u.username, u.role, b.barangay_name
@@ -31,7 +42,8 @@ if (!$u) {
 /* ================= APPROVE USER ================= */
 $stmt = $conn->prepare("
     UPDATE users
-    SET status = 'approved'
+    SET status = 'approved',
+        approved_by_admin = 1
     WHERE id = ?
 ");
 $stmt->execute([$id]);

@@ -216,8 +216,9 @@ h2{
     <div class="error"><?php echo $message; ?></div>
 
     <div class="link">
-        No Account? <a href="auth/register.php">Register Here</a>
-    </div>
+    No Account? <a href="auth/register.php">Register Here</a><br><br>
+    <a href="auth/forgot_password.php">Forgot Password?</a>
+</div>
 </div>
 
 <div class="footer">

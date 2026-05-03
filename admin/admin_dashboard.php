@@ -18,35 +18,58 @@ $totalUsers = getCount($conn, "SELECT COUNT(*) FROM users");
 $pendingUsers = getCount($conn, "SELECT COUNT(*) FROM users WHERE status='pending'");
 $totalBarangays = getCount($conn, "SELECT COUNT(*) FROM barangays");
 $totalActivities = getCount($conn, "SELECT COUNT(*) FROM activities");
-
-/* ================= EXTRA KPI ================= */
 $totalApprovedProjects = getCount($conn, "SELECT COUNT(*) FROM projects WHERE status='approved'");
+
+/* ================= LATEST BUDGET ================= */
 $totalBudget = getCount($conn, "SELECT COALESCE(SUM(total_amount),0) FROM budgets");
 
-/* ================= BARANGAY ANALYTICS ================= */
+/* ================= CORRECT BARANGAY ANALYTICS ================= */
 $stmt = $conn->prepare("
     SELECT 
         b.id,
         b.barangay_name,
-        COALESCE(SUM(a.participants),0) AS total_participants,
-        COUNT(a.id) AS total_activities,
-        COALESCE(SUM(a.allocated_budget),0) AS budget_used,
-        COALESCE(bu.total_amount,0) AS total_amount,
-        (COALESCE(bu.total_amount,0) - COALESCE(SUM(a.allocated_budget),0)) AS remaining
+
+        COALESCE(act.total_participants,0) AS total_participants,
+        COALESCE(act.total_activities,0) AS total_activities,
+        COALESCE(act.used_amount,0) AS used_amount,
+
+        COALESCE(bg.total_amount,0) AS total_amount,
+
+        (COALESCE(bg.total_amount,0) - COALESCE(act.used_amount,0)) AS remaining_budget
+
     FROM barangays b
-    LEFT JOIN activities a ON a.barangay_id = b.id
-    LEFT JOIN budgets bu ON bu.barangay_id = b.id
-    GROUP BY b.id, bu.total_amount
+
+    LEFT JOIN (
+        SELECT 
+            barangay_id,
+            SUM(participants) AS total_participants,
+            COUNT(*) AS total_activities,
+            SUM(COALESCE(allocated_budget,0)) AS used_amount
+        FROM activities
+        GROUP BY barangay_id
+    ) act ON act.barangay_id = b.id
+
+    LEFT JOIN (
+        SELECT DISTINCT ON (barangay_id)
+            barangay_id,
+            total_amount
+        FROM budgets
+        ORDER BY barangay_id, year DESC, id DESC
+    ) bg ON bg.barangay_id = b.id
+
+    ORDER BY b.barangay_name ASC
 ");
+
 $stmt->execute();
 $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 /* ================= ML SCORE ================= */
 function mlScore($d) {
+
     $participants = $d['total_participants'];
     $activities = $d['total_activities'];
-    $budgetUsed = $d['budget_used'];
-    $budget = $d['total_amount'] ?: 1;
+    $budgetUsed = $d['used_amount'];
+    $budget = max($d['total_amount'], 1);
 
     $efficiency = ($budgetUsed > 0) ? ($participants / $budgetUsed) : 0;
     $budgetRatio = $budgetUsed / $budget;
@@ -61,11 +84,11 @@ foreach ($data as $i => $d) {
     $data[$i]['ml_score'] = mlScore($d);
 }
 
-/* TOP BARANGAY */
+/* SORT */
 usort($data, fn($a,$b) => $b['ml_score'] <=> $a['ml_score']);
 
-$topBarangay = $data[0]['barangay_name'] ?? "N/A";
-$topScore = $data[0]['ml_score'] ?? 0;
+$top = $data[0] ?? null;
+$lowest = $data[count($data)-1] ?? null;
 
 /* ================= AUDIT LOG ================= */
 $stmt = $conn->prepare("
@@ -82,7 +105,7 @@ $auditLogs = $stmt->fetchAll(PDO::FETCH_ASSOC);
 <!DOCTYPE html>
 <html>
 <head>
-<title>Admin Dashboard (Real-Time)</title>
+<title>Admin Dashboard</title>
 
 <link rel="stylesheet" href="../assets/style.css">
 <link rel="stylesheet" href="../assets/sbstyle.css">
@@ -102,9 +125,10 @@ $auditLogs = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 .glass{
     background: rgba(255,255,255,0.2);
-    backdrop-filter: blur(500px);
+    backdrop-filter: blur(20px);
     border-radius: 15px;
     padding: 20px;
+    margin-top:20px;
 }
 
 table{
@@ -113,7 +137,7 @@ table{
 }
 
 th{
-    background:#dc3545;
+    background:#1e3c72;
     color:white;
     padding:10px;
 }
@@ -132,105 +156,106 @@ td{
 
 <div class="main">
 
-    <div class="header">
-        <h2>📊 Admin Real-Time Monitoring Dashboard</h2>
+<h2>📊 Admin Analytics Dashboard</h2>
+
+<!-- KPI -->
+<div class="grid">
+
+    <div class="glass card">
+        <h3>Barangays</h3>
+        <h2><?= $totalBarangays ?></h2>
     </div>
 
-    <!-- KPI -->
-    <div class="grid">
-
-        <div class="glass card">
-            <h3>Barangays</h3>
-            <h2 id="barangays"><?= $totalBarangays ?></h2>
-        </div>
-
-        <div class="glass card">
-            <h3>Users</h3>
-            <h2 id="users"><?= $totalUsers ?></h2>
-        </div>
-
-        <div class="glass card">
-            <h3>Pending</h3>
-            <h2 id="pending"><?= $pendingUsers ?></h2>
-        </div>
-
-        <div class="glass card">
-            <h3>Projects</h3>
-            <h2 id="projects"><?= $totalApprovedProjects ?></h2>
-        </div>
-
-        <div class="glass card">
-            <h3>Budget</h3>
-            <h2 id="budget">₱<?= number_format($totalBudget) ?></h2>
-        </div>
-
+    <div class="glass card">
+        <h3>Users</h3>
+        <h2><?= $totalUsers ?></h2>
     </div>
 
-    <!-- AI INSIGHT -->
-    <div class="glass" style="margin-top:20px;">
-        <h3>🤖 AI Insight</h3>
-        <p><b>Top Barangay:</b> <span id="top_barangay"><?= $topBarangay ?></span></p>
-        <p>ML Score: <?= $topScore ?>%</p>
+    <div class="glass card">
+        <h3>Pending</h3>
+        <h2><?= $pendingUsers ?></h2>
     </div>
 
-    <!-- CHART -->
-    <div class="glass" style="margin-top:20px;">
-        <h3>📈 Barangay Performance</h3>
-        <canvas id="chart"></canvas>
+    <div class="glass card">
+        <h3>Projects</h3>
+        <h2><?= $totalApprovedProjects ?></h2>
     </div>
 
-    <!-- AUDIT LOG -->
-    <div class="glass" style="margin-top:20px;">
-        <h3>📜 Live Audit Feed</h3>
-        <div id="audit_logs">
-            <?php foreach($auditLogs as $log){ ?>
-                <div style="padding:8px;border-bottom:1px solid #eee;">
-                    <b><?= $log['username'] ?? 'System' ?></b> - <?= $log['action_type'] ?>
-                    <br><small><?= $log['action_time'] ?></small>
-                </div>
-            <?php } ?>
-        </div>
+    <div class="glass card">
+        <h3>Budget</h3>
+        <h2>₱<?= number_format($totalBudget) ?></h2>
     </div>
 
 </div>
 
-<script>
-/* ================= CHART ================= */
-const labels = <?= json_encode(array_column($data, 'barangay_name')) ?>;
-const scores = <?= json_encode(array_column($data, 'ml_score')) ?>;
-const participants = <?= json_encode(array_column($data, 'total_participants')) ?>;
-const activities = <?= json_encode(array_column($data, 'total_activities')) ?>;
-const usedBudget = <?= json_encode(array_column($data, 'budget_used')) ?>;
+<!-- AI SUMMARY -->
+<div class="glass">
+    <h3>🤖 Performance Insight</h3>
 
-let myChart = new Chart(document.getElementById('chart'), {
+    <p><b>🏆 Highest Performer:</b>
+        <?= $top['barangay_name'] ?? 'N/A' ?>
+        (Score: <?= $top['ml_score'] ?? 0 ?>%)
+    </p>
+
+    <p><b>⚠ Lowest Performer:</b>
+        <?= $lowest['barangay_name'] ?? 'N/A' ?>
+        (Score: <?= $lowest['ml_score'] ?? 0 ?>%)
+    </p>
+</div>
+
+<!-- CHART -->
+<div class="glass">
+    <h3>📈 Barangay Performance Overview</h3>
+    <canvas id="chart"></canvas>
+</div>
+
+<!-- AUDIT -->
+<div class="glass">
+    <h3>📜 Audit Logs</h3>
+
+    <?php foreach($auditLogs as $log){ ?>
+        <div style="padding:8px;border-bottom:1px solid #ddd;">
+            <b><?= $log['username'] ?? 'System' ?></b>
+            - <?= $log['action_type'] ?>
+            <br>
+            <small><?= $log['action_time'] ?></small>
+        </div>
+    <?php } ?>
+</div>
+
+</div>
+
+<script>
+const chartData = <?= json_encode($data) ?>;
+
+new Chart(document.getElementById('chart'), {
     type: 'bar',
     data: {
-        labels: labels,
+        labels: chartData.map(x => x.barangay_name),
+
         datasets: [
             {
                 label: 'ML Score',
-                data: scores
+                data: chartData.map(x => x.ml_score)
             },
             {
                 label: 'Participants',
-                data: participants
+                data: chartData.map(x => x.total_participants)
             },
             {
-                label: 'Activities',
-                data: activities
+                label: 'Used Budget',
+                data: chartData.map(x => x.used_amount)
             },
             {
-                label: 'Budget Used',
-                data: usedBudget
+                label: 'Remaining Budget',
+                data: chartData.map(x => x.remaining_budget)
             }
         ]
     },
     options: {
         responsive:true,
-        scales: {
-            y: {
-                beginAtZero: true
-            }
+        scales:{
+            y:{ beginAtZero:true }
         }
     }
 });

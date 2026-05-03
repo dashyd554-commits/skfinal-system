@@ -2,144 +2,179 @@
 session_start();
 include '../config/db.php';
 
+/* ================= SECURITY CHECK ================= */
 if (!isset($_SESSION['admin'])) {
     header("Location: ../index.php");
     exit();
 }
 
-/* ================= GET PENDING USERS (FIXED JOIN) ================= */
+/* ================= GET PENDING USERS ================= */
 $stmt = $conn->prepare("
-    SELECT 
-        users.*,
-        barangays.barangay_name
-    FROM users
-    LEFT JOIN barangays ON users.barangay_id = barangays.id
-    WHERE users.status = 'pending'
-    ORDER BY users.id DESC
+    SELECT u.*, b.barangay_name
+    FROM users u
+    LEFT JOIN barangays b ON u.barangay_id = b.id
+    WHERE u.status = 'pending'
+    ORDER BY u.id DESC
 ");
 $stmt->execute();
-
 $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
-$pendingCount = count($users);
-
-/* ================= BARANGAY DISTRIBUTION ML ================= */
-$barangayCount = [];
-$roleCount = [];
-
-foreach ($users as $u) {
-
-    $b = $u['barangay_name'] ?? 'Unknown';  // FIXED HERE
-    $r = $u['role'] ?? 'unknown';
-
-    $barangayCount[$b] = ($barangayCount[$b] ?? 0) + 1;
-    $roleCount[$r] = ($roleCount[$r] ?? 0) + 1;
-}
-
-/* ================= MOST ACTIVE BARANGAY ================= */
-$mostActiveBarangay = "N/A";
-
-if (!empty($barangayCount)) {
-    arsort($barangayCount);
-    $mostActiveBarangay = array_key_first($barangayCount);
-}
-
-/* ================= MOST REQUESTED ROLE ================= */
-$mostRequestedRole = "N/A";
-
-if (!empty($roleCount)) {
-    arsort($roleCount);
-    $mostRequestedRole = array_key_first($roleCount);
-}
-
-/* ================= ML RISK MODEL ================= */
-$mlScore = min(100, $pendingCount * 5);
-
-if ($mlScore >= 70) {
-
-    $mlStatus = "HIGH RISK";
-    $mlColor = "red";
-    $mlInsight = "Approval backlog is critical and may delay system operations.";
-    $mlRecommendation = "Assign additional reviewers or batch approve pending users.";
-
-} elseif ($mlScore >= 40) {
-
-    $mlStatus = "MODERATE LOAD";
-    $mlColor = "orange";
-    $mlInsight = "Pending queue is growing and requires monitoring.";
-    $mlRecommendation = "Process approvals consistently to avoid accumulation.";
-
-} else {
-
-    $mlStatus = "NORMAL LOAD";
-    $mlColor = "green";
-    $mlInsight = "System approval flow is stable.";
-    $mlRecommendation = "Maintain current approval pace.";
-}
 ?>
 
 <!DOCTYPE html>
 <html>
 <head>
-<title>Pending Users</title>
-
+<title>Admin Pending Users</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <link rel="stylesheet" href="../assets/style.css">
 <link rel="stylesheet" href="../assets/sbstyle.css">
 
 <style>
-.main{
-    margin-left:190px;   /* moved dashboard 30px to left */
-    padding:20px;
-    width:calc(100% - 200px);
+*{
+    margin:0;
+    padding:0;
+    box-sizing:border-box;
+    font-family:Arial;
+}
+
+html,body{
+    width:100%;
     overflow-x:hidden;
 }
 
-.glass {
-    background: rgba(255,255,255,0.2);
-    backdrop-filter: blur(500px);
-    border-radius: 15px;
-    padding: 20px;
+body{
+    background:url('../assets/bg.jpg') no-repeat center center fixed;
+    background-size:cover;
 }
 
-table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 10px;
-    background: white;
+/* MAIN FIXED */
+.main{
+    margin-left:190px;
+    width:calc(100% - 190px);
+    padding:20px;
+    min-height:100vh;
 }
 
-th {
-    background: #dc3545;
-    color: white;
-    padding: 12px;
+/* MOBILE FIX */
+@media(max-width:768px){
+    .main{
+        margin-left:0;
+        width:100%;
+        padding:12px;
+    }
 }
 
-td {
-    padding: 12px;
-    border-bottom: 1px solid #eee;
+/* HEADER */
+.header{
+    text-align:center;
+    color:white;
+    margin-bottom:25px;
 }
 
-tr:hover {
-    background: #f8f9fa;
+.header h2{
+    font-size:34px;
+    text-shadow:0 2px 8px rgba(0,0,0,0.4);
 }
 
-.badge {
-    background: orange;
-    color: white;
-    padding: 5px 10px;
-    border-radius: 20px;
-    font-size: 12px;
+.header p{
+    margin-top:8px;
+    font-size:15px;
 }
 
-.ml-box {
-    margin-bottom: 20px;
-    padding: 20px;
-    border-left: 5px solid;
+/* GLASS CONTAINER */
+.table-box{
+    width:100%;
+    background:rgba(255,255,255,0.15);
+    backdrop-filter:blur(18px);
+    padding:20px;
+    border-radius:18px;
+    box-shadow:0 4px 20px rgba(0,0,0,0.2);
+    overflow-x:auto;
+}
+
+/* TABLE */
+table{
+    width:100%;
+    min-width:900px;
+    border-collapse:collapse;
+    background:rgba(255,255,255,0.96);
+    border-radius:12px;
+    overflow:hidden;
+}
+
+th{
+    background:#198754;
+    color:white;
+    padding:14px;
+    font-size:14px;
+}
+
+td{
+    padding:14px;
+    text-align:center;
+    border-bottom:1px solid #ddd;
+    font-size:14px;
+}
+
+tr:hover{
+    background:#f2f2f2;
+}
+
+/* BADGE */
+.badge{
+    background:orange;
+    color:white;
+    padding:5px 10px;
+    border-radius:20px;
+    font-size:11px;
+    font-weight:bold;
+}
+
+/* BUTTONS */
+.action-btn{
+    display:inline-block;
+    padding:7px 14px;
+    border-radius:8px;
+    text-decoration:none;
+    color:white;
+    font-size:12px;
+    font-weight:bold;
+    margin:2px;
+}
+
+.approve{
+    background:#198754;
+}
+
+.reject{
+    background:#dc3545;
+}
+
+.action-btn:hover{
+    opacity:0.85;
+}
+
+/* EMPTY */
+.empty{
+    text-align:center;
+    color:white;
+    padding:40px;
+    font-size:18px;
+}
+
+/* FOOTER */
+.footer{
+    margin-top:25px;
+    text-align:center;
+    color:white;
+    font-size:13px;
+    background:rgba(0,0,0,0.25);
+    padding:12px;
+    border-radius:10px;
 }
 </style>
-
 </head>
+
 <body>
 
 <?php include '../assets/sidebar.php'; ?>
@@ -147,33 +182,17 @@ tr:hover {
 <div class="main">
 
     <div class="header">
-        <h2>⏳ Pending Users</h2>
-        <p>AI-assisted approval monitoring system</p>
+        <h2>👮 Pending User Approval Registry</h2>
+        <p>Administrator Approval of Newly Registered SK Officials</p>
     </div>
 
-    <!-- ================= ML PANEL ================= -->
-    <div class="glass ml-box" style="border-color: <?= $mlColor ?>;">
+    <?php if($users){ ?>
 
-        <h3>🤖 AI Approval Intelligence</h3>
-
-        <p><b>Status:</b> <?= $mlStatus ?></p>
-        <p><b>Pending Users:</b> <?= $pendingCount ?></p>
-        <p><b>Most Requested Role:</b> <?= $mostRequestedRole ?></p>
-        <p><b>Most Active Barangay:</b> <?= $mostActiveBarangay ?></p>
-
-        <p><b>Insight:</b> <?= $mlInsight ?></p>
-        <p><b>Recommendation:</b> <?= $mlRecommendation ?></p>
-
-    </div>
-
-    <!-- ================= TABLE ================= -->
-    <div class="glass">
-
-        <h3>Users Waiting Approval</h3>
-
+    <div class="table-box">
         <table>
             <tr>
-                <th>ID</th>
+                <th>Full Name</th>
+                <th>Email</th>
                 <th>Username</th>
                 <th>Role</th>
                 <th>Barangay</th>
@@ -181,34 +200,43 @@ tr:hover {
                 <th>Action</th>
             </tr>
 
-            <?php if ($pendingCount > 0) { ?>
-                <?php foreach ($users as $row) { ?>
-                <tr>
-                    <td><?= $row['id']; ?></td>
-                    <td><?= htmlspecialchars($row['username']); ?></td>
-                    <td><?= htmlspecialchars($row['role']); ?></td>
+            <?php foreach($users as $u){ ?>
+            <tr>
+                <td><?= htmlspecialchars($u['fullname'] ?? 'N/A') ?></td>
+                <td><?= htmlspecialchars($u['email'] ?? 'N/A') ?></td>
+                <td><?= htmlspecialchars($u['username']) ?></td>
+                <td><?= ucfirst(htmlspecialchars($u['role'])) ?></td>
+                <td><?= htmlspecialchars($u['barangay_name'] ?? 'N/A') ?></td>
+                <td><span class="badge"><?= strtoupper($u['status']) ?></span></td>
+                <td>
+                    <a class="action-btn approve"
+                       href="admin_approve_user.php?id=<?= $u['id'] ?>"
+                       onclick="return confirm('Approve this user account?')">
+                       ✔ Approve
+                    </a>
 
-                    <!-- FIXED BARANGAY NAME -->
-                    <td><?= htmlspecialchars($row['barangay_name'] ?? 'N/A'); ?></td>
-
-                    <td><span class="badge">Pending</span></td>
-                    <td>
-                        <a href="admin_approve_user.php?id=<?= $row['id']; ?>">
-                            Approve
-                        </a>
-                    </td>
-                </tr>
-                <?php } ?>
-            <?php } else { ?>
-                <tr>
-                    <td colspan="6" style="text-align:center; padding:20px;">
-                        No pending users
-                    </td>
-                </tr>
+                    <a class="action-btn reject"
+                       href="admin_reject_user.php?id=<?= $u['id'] ?>"
+                       onclick="return confirm('Reject this user account?')">
+                       ✖ Reject
+                    </a>
+                </td>
+            </tr>
             <?php } ?>
 
         </table>
+    </div>
 
+    <?php } else { ?>
+
+        <div class="table-box empty">
+            ✅ No pending user accounts found.
+        </div>
+
+    <?php } ?>
+
+    <div class="footer">
+        © 2026 SK Decision Support System | Pending User Approval Management
     </div>
 
 </div>

@@ -14,7 +14,9 @@ $user_id = $_SESSION['user']['id'];
 $stmt = $conn->prepare("
     SELECT COUNT(*) 
     FROM projects
-    WHERE barangay_id = :bid AND created_by = :uid
+    WHERE barangay_id = :bid
+    AND created_by = :uid
+    AND status != 'cancelled'
 ");
 $stmt->execute([':bid' => $barangay_id, ':uid' => $user_id]);
 $totalProposals = $stmt->fetchColumn();
@@ -23,7 +25,8 @@ $totalProposals = $stmt->fetchColumn();
 $stmt = $conn->prepare("
     SELECT COUNT(*) 
     FROM projects
-    WHERE barangay_id = :bid AND created_by = :uid
+    WHERE barangay_id = :bid
+    AND created_by = :uid
     AND status = 'approved'
 ");
 $stmt->execute([':bid' => $barangay_id, ':uid' => $user_id]);
@@ -33,7 +36,8 @@ $approved = $stmt->fetchColumn();
 $stmt = $conn->prepare("
     SELECT COUNT(*) 
     FROM projects
-    WHERE barangay_id = :bid AND created_by = :uid
+    WHERE barangay_id = :bid
+    AND created_by = :uid
     AND status = 'rejected'
 ");
 $stmt->execute([':bid' => $barangay_id, ':uid' => $user_id]);
@@ -42,42 +46,75 @@ $rejected = $stmt->fetchColumn();
 /* ================= PENDING ================= */
 $pending = $totalProposals - ($approved + $rejected);
 
-/* ================= TOTAL BUDGET ================= */
+/* ================= BUDGET INFO ================= */
 $stmt = $conn->prepare("
-    SELECT COALESCE(SUM(budget_requested),0)
-    FROM projects
-    WHERE barangay_id = :bid AND created_by = :uid
+    SELECT total_amount, remaining_budget
+    FROM budgets
+    WHERE barangay_id = :bid
+    ORDER BY id DESC
+    LIMIT 1
 ");
-$stmt->execute([':bid' => $barangay_id, ':uid' => $user_id]);
-$totalBudgetRequested = $stmt->fetchColumn();
+$stmt->execute([':bid' => $barangay_id]);
+$budgetInfo = $stmt->fetch(PDO::FETCH_ASSOC);
 
-/* ================= ML API CALL (FIXED - GET ONLY) ================= */
+$totalAnnualBudget = $budgetInfo['total_amount'] ?? 0;
+$remainingBudget   = $budgetInfo['remaining_budget'] ?? 0;
+
+/* ================= USED BUDGET ================= */
+$stmt = $conn->prepare("
+    SELECT COALESCE(SUM(amount),0)
+    FROM budget_transactions
+    WHERE barangay_id = :bid
+");
+$stmt->execute([':bid' => $barangay_id]);
+$totalUsedBudget = $stmt->fetchColumn();
+
+/* ================= ML API ================= */
 $ml_data = null;
+$url = "https://skmanagementsys.onrender.com/predict";
 
-$ch = curl_init("https://skmanagementsys.onrender.com/predict");
+$postData = [
+    "total_budget"       => (float)$totalAnnualBudget,
+    "used_budget"        => (float)$totalUsedBudget,
+    "remaining_budget"   => (float)$remainingBudget,
+    "approved_projects"  => (int)$approved,
+    "rejected_projects"  => (int)$rejected,
+    "pending_projects"   => (int)$pending,
+    "total_projects"     => (int)$totalProposals
+];
 
-curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-curl_setopt($ch, CURLOPT_HTTPGET, true);
-curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+$ch = curl_init($url);
+
+curl_setopt_array($ch, [
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_POST => true,
+    CURLOPT_HTTPHEADER => ["Content-Type: application/json"],
+    CURLOPT_POSTFIELDS => json_encode($postData),
+    CURLOPT_TIMEOUT => 60,
+    CURLOPT_CONNECTTIMEOUT => 20,
+    CURLOPT_SSL_VERIFYPEER => false,
+    CURLOPT_FOLLOWLOCATION => true
+]);
 
 $response = curl_exec($ch);
 $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-
-if (curl_errno($ch)) {
-    error_log("CURL ERROR: " . curl_error($ch));
-}
-
+$curl_error = curl_error($ch);
 curl_close($ch);
 
-if ($http_code == 200 && $response) {
-    $ml_data = json_decode($response, true);
+if ($response && $http_code == 200) {
+    $decoded = json_decode($response, true);
+    if (json_last_error() === JSON_ERROR_NONE) {
+        $ml_data = $decoded;
+    }
 }
 
 /* ================= TREND ================= */
 $stmt = $conn->prepare("
     SELECT DATE(created_at) as date, COUNT(*) as total
     FROM projects
-    WHERE barangay_id = :bid AND created_by = :uid
+    WHERE barangay_id = :bid
+    AND created_by = :uid
+    AND status != 'cancelled'
     GROUP BY DATE(created_at)
     ORDER BY date ASC
 ");
@@ -87,7 +124,7 @@ $trend = $stmt->fetchAll(PDO::FETCH_ASSOC);
 $labels = [];
 $data = [];
 
-foreach ($trend as $t) {
+foreach($trend as $t){
     $labels[] = $t['date'];
     $data[] = $t['total'];
 }
@@ -107,6 +144,7 @@ body{
     margin:0;
     background:url('../assets/bg.jpg') no-repeat center center fixed;
     background-size:cover;
+    font-family:Arial;
 }
 
 .main{
@@ -122,40 +160,71 @@ h2{
 }
 
 .grid{
-    display:grid;
-    grid-template-columns:repeat(auto-fit,minmax(200px,1fr));
+    display:flex;
+    flex-direction:column;
     gap:15px;
 }
 
+.row{
+    display:flex;
+    gap:15px;
+}
+
+.row.top .card{
+    flex:1;
+}
+
+.row.bottom{
+    justify-content:center;
+}
+
+.row.bottom .card{
+    width:220px;
+}
+
 .card{
-    background:rgba(255,255,255,0.55);
+    background:rgba(255,255,255,0.15);
     backdrop-filter:blur(18px);
     border-radius:15px;
     padding:20px;
+    color:#fff;
     text-align:center;
+    box-shadow:0 8px 25px rgba(0,0,0,0.2);
+    margin-bottom:20px;
 }
 
-.card h3{margin:0;color:#555;}
+.card h3{margin:0;}
 .card h2{margin-top:10px;color:#1e3c72;}
+.chart-box h3{color: #fff;}
+.ml-box h3{color: #fff;}
 
-.ml-box{
-    background:rgba(255,255,255,0.75);
-    padding:15px;
-    border-radius:12px;
-    margin-top:20px;
-}
-
-.chart-box{
-    background:rgba(255,255,255,0.5);
-    padding:20px;
+.ml-box,.chart-box{
+    background:rgba(255,255,255,0.15);
+    backdrop-filter:blur(18px);
     border-radius:15px;
-    margin-top:20px;
+    padding:20px;
+    color:#1e3c72;
+    box-shadow:0 8px 25px rgba(0,0,0,0.2);
+    margin-bottom:20px;
 }
 
 @media(max-width:768px){
     .main{
-        margin-left:70px;
-        width:calc(100% - 80px);
+        margin-left:0;
+        width:100%;
+        padding:10px;
+    }
+
+    .row{
+        flex-direction:column;
+    }
+
+    .row.bottom{
+        align-items:center;
+    }
+
+    .row.bottom .card{
+        width:100%;
     }
 }
 </style>
@@ -167,74 +236,43 @@ h2{
 
 <div class="main">
 
-<h2>👑 Chairperson Dashboard (AI Powered)</h2>
+<h2>👑 Chairperson Dashboard</h2>
 
-<!-- ================= CARDS ================= -->
 <div class="grid">
 
-    <div class="card">
-        <h3>Total Proposals</h3>
-        <h2><?= $totalProposals ?></h2>
+    <!-- TOP 4 -->
+    <div class="row top">
+        <div class="card"><h3>Total Proposals</h3><h2><?= $totalProposals ?></h2></div>
+        <div class="card"><h3>Approved</h3><h2><?= $approved ?></h2></div>
+        <div class="card"><h3>Rejected</h3><h2><?= $rejected ?></h2></div>
+        <div class="card"><h3>Pending</h3><h2><?= $pending ?></h2></div>
     </div>
 
-    <div class="card">
-        <h3>Approved</h3>
-        <h2><?= $approved ?></h2>
-    </div>
-
-    <div class="card">
-        <h3>Rejected</h3>
-        <h2><?= $rejected ?></h2>
-    </div>
-
-    <div class="card">
-        <h3>Pending</h3>
-        <h2><?= $pending ?></h2>
-    </div>
-
-    <div class="card">
-        <h3>Total Budget</h3>
-        <h2>₱<?= number_format($totalBudgetRequested,2) ?></h2>
+    <!-- BOTTOM 3 CENTERED -->
+    <div class="row bottom">
+        <div class="card"><h3>Total Budget</h3><h2>₱<?= number_format($totalAnnualBudget,2) ?></h2></div>
+        <div class="card"><h3>Used Budget</h3><h2>₱<?= number_format($totalUsedBudget,2) ?></h2></div>
+        <div class="card"><h3>Remaining Budget</h3><h2>₱<?= number_format($remainingBudget,2) ?></h2></div>
     </div>
 
 </div>
 
-<!-- ================= ML SECTION ================= -->
 <div class="ml-box">
-
     <h3>🤖 AI / ML Analysis</h3>
 
-    <?php if ($ml_data && isset($ml_data['budget_efficiency_score'])): ?>
-
+    <?php if ($ml_data && is_array($ml_data) && !isset($ml_data['error'])): ?>
         <p><b>Category:</b> <?= $ml_data['category'] ?? 'N/A' ?></p>
-
-        <p><b>Success Probability:</b>
-            <?= isset($ml_data['success_probability']) 
-                ? round($ml_data['success_probability'] * 100, 2) . '%' 
-                : 'N/A' ?>
-        </p>
-
-        <p><b>Budget Efficiency Score:</b>
-            <?= $ml_data['budget_efficiency_score'] ?? 'N/A' ?>%
-        </p>
-
-        <p><b>Recommendation:</b>
-            <?= $ml_data['recommendation'] ?? 'No recommendation' ?>
-        </p>
-
+        <p><b>Success Probability:</b> <?= isset($ml_data['success_probability']) ? round($ml_data['success_probability']*100,2).'%' : 'N/A' ?></p>
+        <p><b>Budget Efficiency:</b> <?= $ml_data['budget_efficiency_score'] ?? 'N/A' ?>%</p>
+        <p><b>Recommendation:</b> <?= $ml_data['recommendation'] ?? 'No recommendation available' ?></p>
     <?php else: ?>
-
-        <p style="color:red;">
-            🤖 ML service unavailable. Showing basic analytics only.
-        </p>
-
+        <p style="color:red;">🤖 AI service unavailable or Render API not responding.</p>
+        <p><small>HTTP CODE: <?= $http_code ?><br>CURL ERROR: <?= $curl_error ?></small></p>
     <?php endif; ?>
-
 </div>
 
-<!-- ================= CHART ================= -->
 <div class="chart-box">
-    <h3>📊 Proposal Trend</h3>
+    <h3>📊 Proposal Submission Trend</h3>
     <canvas id="chart"></canvas>
 </div>
 
@@ -242,14 +280,15 @@ h2{
 
 <script>
 new Chart(document.getElementById('chart'), {
-    type: 'line',
-    data: {
+    type:'line',
+    data:{
         labels: <?= json_encode($labels) ?>,
-        datasets: [{
-            label: 'Proposals Over Time',
+        datasets:[{
+            label:'Proposal Trend',
             data: <?= json_encode($data) ?>,
-            borderWidth: 2,
-            tension: 0.3
+            borderWidth:2,
+            tension:0.3,
+            fill:false
         }]
     }
 });

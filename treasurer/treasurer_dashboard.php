@@ -22,7 +22,7 @@ $budget = $stmt->fetch(PDO::FETCH_ASSOC);
 
 $annualBudget = $budget['total_amount'] ?? 0;
 
-/* ================= APPROVED ONLY SPENDING ================= */
+/* ================= APPROVED DISBURSEMENT ================= */
 $stmt = $conn->prepare("
     SELECT COALESCE(SUM(amount),0)
     FROM budget_transactions
@@ -31,7 +31,6 @@ $stmt = $conn->prepare("
 $stmt->execute([$barangay_id]);
 $approvedDisbursement = $stmt->fetchColumn();
 
-/* ✔ FIX: computed from approved ONLY */
 $usedBudget = $approvedDisbursement;
 $remainingBudget = $annualBudget - $usedBudget;
 
@@ -44,6 +43,26 @@ $stmt = $conn->prepare("
 ");
 $stmt->execute([$barangay_id]);
 $rejectedFunds = $stmt->fetchColumn();
+
+/* ================= PENDING TREASURER APPROVAL ================= */
+$stmt = $conn->prepare("
+    SELECT COUNT(*)
+    FROM projects
+    WHERE barangay_id = ?
+    AND status = 'pending_treasurer'
+");
+$stmt->execute([$barangay_id]);
+$totalPendingProposal = $stmt->fetchColumn();
+
+/* ================= FULLY APPROVED PROPOSALS ================= */
+$stmt = $conn->prepare("
+    SELECT COUNT(*)
+    FROM projects
+    WHERE barangay_id = ?
+    AND status = 'approved'
+");
+$stmt->execute([$barangay_id]);
+$totalApprovedProposal = $stmt->fetchColumn();
 
 /* ================= TRANSACTIONS ================= */
 $stmt = $conn->prepare("
@@ -78,7 +97,6 @@ body{
     background-size:cover;
 }
 
-/* dark overlay */
 body::before{
     content:"";
     position:fixed;
@@ -93,15 +111,20 @@ body::before{
     width:calc(100% - 200px);
 }
 
-/* GRID SAME STRUCTURE */
-.grid{
+.grid4{
     display:grid;
     grid-template-columns:repeat(4,1fr);
     gap:20px;
     margin-bottom:20px;
 }
 
-/* GLASS CARD */
+.grid3{
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    gap:20px;
+    margin-bottom:20px;
+}
+
 .glass{
     background:rgba(255,255,255,0.15);
     backdrop-filter:blur(18px);
@@ -109,6 +132,10 @@ body::before{
     padding:20px;
     color:#fff;
     box-shadow:0 8px 25px rgba(0,0,0,0.2);
+}
+
+.card{
+    text-align:center;
 }
 
 .card h3{
@@ -119,7 +146,7 @@ body::before{
 
 .card h2{
     margin-top:10px;
-    color:#fff;
+    color:#1e3c72;
 }
 
 .section-title{
@@ -127,13 +154,11 @@ body::before{
     margin-bottom:15px;
 }
 
-/* CHART */
 .chart-holder{
     width:320px;
     margin:auto;
 }
 
-/* TABLE */
 table{
     width:100%;
     border-collapse:collapse;
@@ -149,11 +174,17 @@ td{
     padding:10px;
     text-align:center;
     border-bottom:1px solid rgba(255,255,255,0.2);
+    color: #1e3c72;
 }
 
-/* RESPONSIVE */
+h2{
+    color:whitesmoke;
+    text-align:center;
+    margin-bottom:20px;
+}
+
 @media(max-width:1000px){
-    .grid{
+    .grid4,.grid3{
         grid-template-columns:repeat(2,1fr);
     }
 }
@@ -163,7 +194,7 @@ td{
         margin-left:70px;
     }
 
-    .grid{
+    .grid4,.grid3{
         grid-template-columns:1fr;
     }
 }
@@ -176,10 +207,10 @@ td{
 
 <div class="main">
 
-    <h2 style="color:white;">💰 Treasurer Financial Dashboard</h2>
+    <h2>💰 Treasurer Financial Dashboard</h2>
 
-    <!-- CARDS -->
-    <div class="grid">
+    <!-- TOP ROW -->
+    <div class="grid4">
 
         <div class="glass card">
             <h3>Annual Budget</h3>
@@ -197,28 +228,38 @@ td{
         </div>
 
         <div class="glass card">
-            <h3>Rejected Proposals</h3>
-            <h2><?= $rejectedFunds ?></h2>
+            <h3>Pending Proposal</h3>
+            <h2><?= $totalPendingProposal ?></h2>
         </div>
 
     </div>
 
-    <!-- SECOND ROW (KEEP YOUR ORIGINAL LAYOUT) -->
-    <div class="grid">
+    <!-- SECOND ROW -->
+    <div class="grid3">
+
+    <div class="glass card">
+            <h3>Rejected Proposals</h3>
+            <h2><?= $rejectedFunds ?></h2>
+        </div>
+
+        <div class="glass card">
+            <h3>Approved Proposal</h3>
+            <h2><?= $totalApprovedProposal ?></h2>
+        </div>
 
         <div class="glass card">
             <h3>Approved Disbursement</h3>
             <h2>₱<?= number_format($approvedDisbursement,2) ?></h2>
         </div>
 
-        <!-- ✔ YOUR ORIGINAL CHART SECTION (RESTORED) -->
-        <div class="glass" style="grid-column: span 3;">
-            <h3 class="section-title">📊 Budget Utilization</h3>
-            <div class="chart-holder">
-                <canvas id="budgetChart"></canvas>
-            </div>
-        </div>
+    </div>
 
+    <!-- CHART -->
+    <div class="glass" style="margin-bottom:20px;">
+        <h3 class="section-title">📊 Budget Utilization</h3>
+        <div class="chart-holder">
+            <canvas id="budgetChart"></canvas>
+        </div>
     </div>
 
     <!-- TABLE -->
@@ -255,7 +296,6 @@ td{
 
 </div>
 
-<!-- ✔ YOUR ORIGINAL CHART SCRIPT (RESTORED) -->
 <script>
 new Chart(document.getElementById('budgetChart'), {
     type: 'doughnut',

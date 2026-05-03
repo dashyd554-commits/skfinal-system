@@ -7,23 +7,55 @@ if (!isset($_SESSION['user']) || $_SESSION['user']['role'] != 'secretary') {
     exit();
 }
 
-/* ================= BARANGAY ID FIX ================= */
 $barangay_id = $_SESSION['user']['barangay_id'];
 
-/* ================= SAFE DATA LOAD (FILTERED) ================= */
+/* ================= TOTAL PENDING PROPOSALS ONLY ================= */
+$stmt = $conn->prepare("
+    SELECT COUNT(*) 
+    FROM projects
+    WHERE barangay_id = :barangay_id
+    AND status = 'pending_secretary'
+");
+$stmt->execute([
+    ':barangay_id' => $barangay_id
+]);
+$totalProposals = $stmt->fetchColumn() ?: 0;
+
+/* ================= APPROVED BY COUNCIL ================= */
+$stmt = $conn->prepare("
+    SELECT COUNT(*) 
+    FROM projects
+    WHERE barangay_id = :barangay_id
+    AND status IN ('pending_treasurer','approved')
+");
+$stmt->execute([
+    ':barangay_id' => $barangay_id
+]);
+$totalApprovedCouncil = $stmt->fetchColumn() ?: 0;
+
+/* ================= REJECTED BY COUNCIL ================= */
+$stmt = $conn->prepare("
+    SELECT COUNT(*) 
+    FROM projects
+    WHERE barangay_id = :barangay_id
+    AND status = 'rejected'
+");
+$stmt->execute([
+    ':barangay_id' => $barangay_id
+]);
+$totalRejectedCouncil = $stmt->fetchColumn() ?: 0;
+
+/* ================= SAFE DATA LOAD ================= */
 try {
     $stmt = $conn->prepare("
         SELECT title, participants 
         FROM activities 
         WHERE barangay_id = :barangay_id
     ");
-
     $stmt->execute([
         ':barangay_id' => $barangay_id
     ]);
-
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
 } catch (Exception $e) {
     $rows = [];
 }
@@ -45,7 +77,6 @@ if (!empty($rows)) {
         $total += $participants;
     }
 
-    /* ================= ML SCORE ================= */
     foreach ($rows as $row) {
 
         $participants = (int)($row['participants'] ?? 0);
@@ -92,7 +123,7 @@ if ($total >= 200) {
 <!DOCTYPE html>
 <html>
 <head>
-<title>Secretary Dashboard (ML)</title>
+<title>Secretary Dashboard</title>
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -101,36 +132,98 @@ if ($total >= 200) {
 <link rel="stylesheet" href="../assets/sbstyle.css">
 
 <style>
-.grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 15px;
+*{box-sizing:border-box;}
+
+body{
+    margin:0;
+    background:url('../assets/bg.jpg') no-repeat center center fixed;
+    background-size:cover;
+    font-family:Arial;
 }
 
-@media (max-width: 768px) {
-    .grid {
-        grid-template-columns: 1fr;
+.main{
+    margin-left:190px;
+    padding:20px;
+    width:calc(100% - 200px);
+}
+
+.header h2{
+    color:white;
+    text-align:center;
+    margin-bottom:20px;
+}
+
+.grid{
+    display:grid;
+    grid-template-columns:repeat(5,1fr);
+    gap:15px;
+    margin-bottom:20px;
+}
+
+.glass{
+    background:rgba(255,255,255,0.15);
+    backdrop-filter:blur(18px);
+    border-radius:15px;
+    padding:20px;
+    color:white;
+    box-shadow:0 8px 25px rgba(0,0,0,0.2);
+    margin-bottom:20px;
+}
+
+.card{text-align:center;}
+
+.card h2{
+    color:#1e3c72;
+    margin-top:10px;
+}
+
+table{
+    width:100%;
+    border-collapse:collapse;
+    margin-top:10px;
+}
+
+th{
+    background:#1e3c72;
+    color:white;
+    padding:12px;
+}
+
+td{
+    padding:10px;
+    text-align:center;
+    border-bottom:1px solid rgba(255,255,255,0.2);
+    color:#1e3c72;
+}
+
+p{
+    color:#1e3c72;
+    line-height:1.8;
+}
+
+.highlight{
+    font-weight:bold;
+    font-size:18px;
+}
+
+canvas{
+    background:rgba(255,255,255,0.08);
+    border-radius:10px;
+    padding:10px;
+}
+
+@media(max-width:768px){
+    .main{
+        margin-left:0;
+        width:100%;
+        padding:10px;
+    }
+
+    .grid{
+        grid-template-columns:1fr;
     }
 }
-
-.insight {
-    font-size: 14px;
-    color: #555;
-}
-
-.highlight {
-    font-weight: bold;
-    color: #2d89ef;
-}
-
-.glass {
-    background: rgba(255,255,255,0.2);
-    backdrop-filter: blur(500px);
-    border-radius: 15px;
-    padding: 20px;
-}
 </style>
-
 </head>
 
 <body>
@@ -140,10 +233,9 @@ if ($total >= 200) {
 <div class="main">
 
 <div class="header">
-    <h2>🤖 Secretary Dashboard (ML Enhanced)</h2>
+    <h2>🤖 Secretary Dashboard</h2>
 </div>
 
-<!-- KPI -->
 <div class="grid">
 
     <div class="glass card">
@@ -156,19 +248,31 @@ if ($total >= 200) {
         <h2><?= count($labels) ?></h2>
     </div>
 
+    <div class="glass card">
+        <h3>📄 Pending Proposals</h3>
+        <h2><?= $totalProposals ?></h2>
+    </div>
+
+    <div class="glass card">
+        <h3>✅ Approved by Council</h3>
+        <h2><?= $totalApprovedCouncil ?></h2>
+    </div>
+
+    <div class="glass card">
+        <h3>❌ Rejected by Council</h3>
+        <h2><?= $totalRejectedCouncil ?></h2>
+    </div>
+
 </div>
 
-<!-- CHART -->
-<div class="glass" style="margin-top:20px;">
+<div class="glass">
     <h3>📊 Participation per Activity</h3>
     <canvas id="chart"></canvas>
 </div>
 
-<!-- ML RANKING -->
-<div class="glass" style="margin-top:20px;">
+<div class="glass">
     <h3>🤖 ML Activity Ranking</h3>
-
-    <table width="100%">
+    <table>
         <tr>
             <th>Activity</th>
             <th>Participants</th>
@@ -184,34 +288,24 @@ if ($total >= 200) {
             </tr>
             <?php } ?>
         <?php } else { ?>
-            <tr>
-                <td colspan="3" style="text-align:center;">
-                    No activity data found
-                </td>
-            </tr>
+            <tr><td colspan="3">No activity data found</td></tr>
         <?php } ?>
-
     </table>
 </div>
 
-<!-- INSIGHT -->
-<div class="glass" style="margin-top:20px;">
+<div class="glass">
     <h3>📢 AI Insight</h3>
-    <p class="insight"><?= htmlspecialchars($mlInsight) ?></p>
+    <p><?= htmlspecialchars($mlInsight) ?></p>
 </div>
 
-<!-- RECOMMENDATION -->
-<div class="glass" style="margin-top:20px;">
+<div class="glass">
     <h3>💡 Recommendation</h3>
     <p class="highlight"><?= htmlspecialchars($recommendation) ?></p>
 </div>
 
-<!-- TOP -->
-<div class="glass" style="margin-top:20px;">
+<div class="glass">
     <h3>🏆 Top Activity (ML)</h3>
-    <p class="highlight">
-        <?= htmlspecialchars($topActivity) ?> (<?= $topScore ?>%)
-    </p>
+    <p class="highlight"><?= htmlspecialchars($topActivity) ?> (<?= $topScore ?>%)</p>
 </div>
 
 </div>
@@ -223,8 +317,19 @@ new Chart(document.getElementById('chart'), {
         labels: <?= json_encode($labels) ?>,
         datasets: [{
             label: 'Participants',
-            data: <?= json_encode($data) ?>
+            data: <?= json_encode($data) ?>,
+            borderWidth: 1
         }]
+    },
+    options: {
+        responsive:true,
+        plugins:{
+            legend:{ labels:{ color:'white' } }
+        },
+        scales:{
+            x:{ ticks:{ color:'white' } },
+            y:{ ticks:{ color:'white' } }
+        }
     }
 });
 </script>

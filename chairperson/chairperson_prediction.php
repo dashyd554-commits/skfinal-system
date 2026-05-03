@@ -139,7 +139,7 @@ body{
 .card{
     text-align:center;
 }
-
+.card h2{color: #1e3c72;}
 table{
     width:100%;
     border-collapse:collapse;
@@ -148,7 +148,7 @@ table{
 }
 
 th{
-    background:#0d6efd;
+    background:#1e3c72;
     color:white;
     padding:12px;
 }
@@ -157,7 +157,7 @@ td{
     padding:10px;
     text-align:center;
     border-bottom:1px solid rgba(255,255,255,0.2);
-    color:white;
+    color:#1e3c72;
 }
 
 .chart-grid{
@@ -165,6 +165,8 @@ td{
     grid-template-columns:1fr 1fr;
     gap:20px;
 }
+p{color: #1e3c72;}
+li{color: #1e3c72;}
 
 @media(max-width:1000px){
     .grid{

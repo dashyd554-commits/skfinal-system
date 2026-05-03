@@ -75,16 +75,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <link rel="stylesheet" href="../assets/style.css">
 
 <style>
-.main{
-    margin-left:200px;
-    padding:20px;
-}
 
 .form-box{
     width:520px;
     background:rgba(255,255,255,0.2);
     padding:20px;
     border-radius:10px;
+    margin-left:500px;
+    padding:20px;
+    margin-top: 50px;
 }
 
 input, textarea{
@@ -96,7 +95,7 @@ input, textarea{
 button{
     width:100%;
     padding:10px;
-    background:#28a745;
+    background:#1e3c72;
     color:white;
     border:none;
 }
@@ -104,6 +103,10 @@ button{
 .msg{
     margin-top:10px;
     color:green;
+}
+h2{
+    text-align: center;
+    color: whitesmoke;
 }
 </style>
 </head>
