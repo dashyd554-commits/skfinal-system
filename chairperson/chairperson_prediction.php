@@ -10,7 +10,7 @@ if (!isset($_SESSION['user']) || $_SESSION['user']['role'] != 'chairman') {
 $barangay_id = $_SESSION['user']['barangay_id'];
 
 /* ================= CALL FLASK API ================= */
-$apiUrl = "https://skfinal-system-1.onrender.com/predict"; // CHANGE if needed
+$apiUrl = "https://skfinal-system.onrender.com/predict"; // CHANGE if needed
 
 $ch = curl_init($apiUrl);
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
