@@ -8,7 +8,7 @@ from sklearn.ensemble import RandomForestRegressor
 app = Flask(__name__)
 CORS(app)
 
-# ================= DB =================
+# ================= DB CONNECTION =================
 def get_connection():
     return psycopg2.connect(
         host=os.getenv("DB_HOST"),
@@ -31,12 +31,12 @@ def load_data():
     LIMIT 500
     """
 
-    df = pd.read_sql(query, conn)
+    df = pd.read_sql_query(query, conn)
     conn.close()
 
-    df["participants"] = pd.to_numeric(df["participants"], errors="coerce").fillna(0)
-    df["budget"] = pd.to_numeric(df["budget"], errors="coerce").fillna(1)
-    df["evaluation_score"] = pd.to_numeric(df["evaluation_score"], errors="coerce").fillna(0)
+    df["participants"] = df["participants"].fillna(0)
+    df["budget"] = df["budget"].fillna(1)
+    df["evaluation_score"] = df["evaluation_score"].fillna(0)
 
     df["efficiency"] = df["participants"] / (df["budget"] + 1)
     df["quality"] = df["evaluation_score"] / 100
@@ -48,7 +48,7 @@ def train_model(df):
     X = df[["participants", "budget", "efficiency", "quality"]]
     y = (df["efficiency"] * 50) + (df["quality"] * 50)
 
-    model = RandomForestRegressor(n_estimators=100, random_state=42)
+    model = RandomForestRegressor(n_estimators=80, random_state=42)
     model.fit(X, y)
 
     return model
@@ -58,8 +58,8 @@ def train_model(df):
 def home():
     return jsonify({"status": "ML API running"})
 
-# ================= PREDICT =================
-@app.route("/predict", methods=["POST", "GET"])
+# ================= PREDICT (FIXED) =================
+@app.route("/predict", methods=["POST"])
 def predict():
     try:
         df = load_data()
@@ -74,19 +74,19 @@ def predict():
 
         mean_score = float(df["score"].mean())
 
-        # SIMPLE CATEGORY LOGIC
+        # ================= CATEGORY LOGIC =================
         if mean_score >= 70:
             category = "High Performance"
             prob = 0.85
-            rec = "Maintain strong programs"
+            rec = "Maintain strong programs and expand initiatives"
         elif mean_score >= 40:
             category = "Moderate Performance"
             prob = 0.60
-            rec = "Improve proposal quality and participation rate"
+            rec = "Barangay has stable execution. Improve proposal quality and participation rate"
         else:
             category = "Low Performance"
             prob = 0.30
-            rec = "Improve execution and budgeting"
+            rec = "Improve planning, execution, and budget utilization"
 
         return jsonify({
             "mean_score": mean_score,
