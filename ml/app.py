@@ -1,77 +1,67 @@
-from flask import Flask, request, jsonify
+from flask import Flask, jsonify, request
+import os
 
 app = Flask(__name__)
+CORS(app)
 
-# ================= ROOT TEST =================
-@app.route("/", methods=["GET"])
+@app.route("/")
 def home():
-    return jsonify({
-        "status": "running",
-        "message": "SK ML API is active"
-    })
+    return "SK ML API RUNNING"
 
-# ================= PREDICT =================
 @app.route("/predict", methods=["POST"])
 def predict():
-    data = request.get_json()
 
-    if not data:
+    try:
+        data = request.get_json()
+
+        total_budget = float(data.get("total_budget", 0))
+        used_budget = float(data.get("used_budget", 0))
+        remaining_budget = float(data.get("remaining_budget", 0))
+        approved_projects = int(data.get("approved_projects", 0))
+        rejected_projects = int(data.get("rejected_projects", 0))
+        pending_projects = int(data.get("pending_projects", 0))
+        total_projects = int(data.get("total_projects", 0))
+
+        if total_budget <= 0:
+            return jsonify({"error": "No budget data"}), 400
+
+        utilization = (used_budget / total_budget) * 100 if total_budget > 0 else 0
+        approval_rate = (approved_projects / total_projects) * 100 if total_projects > 0 else 0
+        rejection_penalty = (rejected_projects / total_projects) * 100 if total_projects > 0 else 0
+
+        score = (
+            utilization * 0.35 +
+            approval_rate * 0.45 +
+            (100 - rejection_penalty) * 0.20
+        )
+
+        score = round(score, 2)
+
+        if score >= 75:
+            category = "High Performance"
+            success_probability = 0.88
+            recommendation = "Barangay operations are excellent. Maintain active youth programs and continue strategic funding."
+        elif score >= 45:
+            category = "Moderate Performance"
+            success_probability = 0.64
+            recommendation = "Barangay performance is stable. Increase proposal completion rate and improve budget usage."
+        else:
+            category = "Low Performance"
+            success_probability = 0.32
+            recommendation = "Barangay performance is below target. Strengthen planning, proposal approval, and project implementation."
+
         return jsonify({
-            "error": "No JSON received"
-        }), 400
+            "status": "ok",
+            "category": category,
+            "success_probability": success_probability,
+            "budget_efficiency_score": score,
+            "recommendation": recommendation
+        })
 
-    # ================= INPUTS =================
-    total_budget = float(data.get("total_budget", 0))
-    used_budget = float(data.get("used_budget", 0))
-    approved = int(data.get("approved_projects", 0))
-    rejected = int(data.get("rejected_projects", 0))
-    total_projects = int(data.get("total_projects", 0))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
-    # ================= VALIDATION =================
-    if total_budget <= 0:
-        return jsonify({
-            "error": "Invalid budget data"
-        }), 400
 
-    # ================= COMPUTE METRICS =================
-    utilization = (used_budget / total_budget) * 100 if total_budget else 0
-
-    approval_rate = (approved / total_projects) * 100 if total_projects > 0 else 0
-
-    rejection_rate = (rejected / total_projects) * 100 if total_projects > 0 else 0
-
-    # ================= SIMPLE ML SCORE =================
-    score = (
-        utilization * 0.5 +
-        approval_rate * 0.4 -
-        rejection_rate * 0.2
-    )
-
-    # ================= CLASSIFICATION =================
-    if score >= 70:
-        category = "High Performance"
-        probability = 0.85
-        recommendation = "Excellent performance. Maintain current strategy and expand programs."
-    elif score >= 40:
-        category = "Moderate Performance"
-        probability = 0.60
-        recommendation = "Stable execution. Improve proposal quality and participation rate."
-    else:
-        category = "Low Performance"
-        probability = 0.30
-        recommendation = "Weak performance. Improve planning, execution, and budget usage."
-
-    # ================= RESPONSE =================
-    return jsonify({
-        "category": category,
-        "success_probability": round(probability, 2),
-        "budget_efficiency_score": round(score, 2),
-        "utilization": round(utilization, 2),
-        "recommendation": recommendation
-    })
-
-# ================= RUN =================
 if __name__ == "__main__":
-    import os
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
