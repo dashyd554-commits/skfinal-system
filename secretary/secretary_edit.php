@@ -177,8 +177,6 @@ button:hover{
 
 <body>
 
-<?php include '../assets/sidebar.php'; ?>
-
 <div class="main">
 
 <div class="form">
@@ -206,7 +204,7 @@ pattern="[A-Za-z\s\.]+" required>
 </select>
 
 <button type="submit">Update Council Member</button>
-
+<a href="secretary_sk_council.php" class="back-btn">← Back</a>
 </form>
 
 </div>
