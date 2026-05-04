@@ -2,135 +2,74 @@ from flask import Flask, jsonify
 import pandas as pd
 import psycopg2
 import os
-import pickle
-import json
+from sklearn.ensemble import RandomForestRegressor
 
 app = Flask(__name__)
 
-# ================= DATABASE CONNECTION =================
+# ================= DB =================
 def get_connection():
     return psycopg2.connect(
-        host=os.getenv("DB_HOST", "dpg-d7ocp6a8qa3s73ahfb4g-a.ohio-postgres.render.com"),
-        database=os.getenv("DB_NAME", "sk_system"),
-        user=os.getenv("DB_USER", "sk_new"),
-        password=os.getenv("DB_PASSWORD", "bX9G8vuFr3DTrHIASqTOsK9qCZ6A4lfZ"),
+        host=os.getenv("DB_HOST"),
+        database=os.getenv("DB_NAME"),
+        user=os.getenv("DB_USER"),
+        password=os.getenv("DB_PASSWORD"),
         port=os.getenv("DB_PORT", "5432")
     )
 
-# ================= LOAD MODEL =================
-def load_model():
-    try:
-        with open("model.pkl", "rb") as f:
-            return pickle.load(f)
-    except:
-        return None
+# ================= LOAD DATA (MUST EXIST) =================
+def load_data():
+    conn = get_connection()
 
-# ================= LOAD LIVE DATA =================
-def load_live_data():
-    try:
-        conn = get_connection()
+    query = """
+    SELECT 
+        COALESCE(participants,0) AS participants,
+        COALESCE(allocated_budget,1) AS budget,
+        COALESCE(evaluation_score,0) AS evaluation_score
+    FROM activities
+    LIMIT 200
+    """
 
-        query = """
-        SELECT 
-            a.id,
-            a.title,
-            a.barangay_id,
-            COALESCE(a.participants,0) AS participants,
-            COALESCE(a.evaluation_score,0) AS evaluation_score,
-            COALESCE(a.allocated_budget,0) AS allocated_budget,
-            COALESCE(b.total_amount,1) AS total_budget,
-            COALESCE(b.remaining_budget,0) AS remaining_budget,
-            COUNT(p.id) AS project_count
-        FROM activities a
-        LEFT JOIN budgets b 
-            ON a.barangay_id = b.barangay_id
-        LEFT JOIN projects p
-            ON a.id = p.activity_id
-        GROUP BY 
-            a.id, a.title, a.barangay_id,
-            a.participants, a.evaluation_score,
-            a.allocated_budget,
-            b.total_amount, b.remaining_budget
-        """
+    df = pd.read_sql_query(query, conn)
+    conn.close()
 
-        df = pd.read_sql_query(query, conn)
-        conn.close()
+    df["participants"] = pd.to_numeric(df["participants"], errors="coerce").fillna(0)
+    df["budget"] = pd.to_numeric(df["budget"], errors="coerce").fillna(1)
+    df["evaluation_score"] = pd.to_numeric(df["evaluation_score"], errors="coerce").fillna(0)
 
-        if df.empty:
-            return df
+    df["efficiency"] = df["participants"] / (df["budget"] + 1)
+    df["quality"] = df["evaluation_score"] / 100
 
-        # ================= CLEAN =================
-        numeric_cols = [
-            "participants",
-            "evaluation_score",
-            "allocated_budget",
-            "total_budget",
-            "remaining_budget",
-            "project_count"
-        ]
+    return df
 
-        for col in numeric_cols:
-            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+# ================= TRAIN =================
+def train_model(df):
+    X = df[["participants", "budget", "efficiency", "quality"]]
+    y = df["efficiency"] * 50 + df["quality"] * 50
 
-        df["total_budget"] = df["total_budget"].apply(lambda x: max(x,1))
+    model = RandomForestRegressor(n_estimators=100, random_state=42)
+    model.fit(X, y)
+    return model
 
-        # ================= FEATURES =================
-        df["budget_ratio"] = df["allocated_budget"] / df["total_budget"]
-        df["cost_per_participant"] = df["allocated_budget"] / (df["participants"] + 1)
-        df["implementation_strength"] = df["evaluation_score"] * (df["participants"] + 1)
-        df["budget_utilization"] = ((df["total_budget"] - df["remaining_budget"]) / df["total_budget"]) * 100
-
-        return df
-
-    except Exception as e:
-        print("DB ERROR:", e)
-        return pd.DataFrame()
-
-# ================= HOME =================
-@app.route("/")
-def home():
-    return {"status": "Municipal Intelligence API Running"}
-
-# ================= PREDICT =================
-@app.route("/predict", methods=["GET"])
+# ================= ROUTE =================
+@app.route("/predict")
 def predict():
-    try:
-        df = load_data()
+    df = load_data()   # 🔥 FIXED ERROR HERE
 
-        if df.empty:
-            return jsonify({"error": "No data found"}), 400
+    if df.empty:
+        return jsonify({"error": "No data"}), 400
 
-        model = train_model(df)
+    model = train_model(df)
+    X = df[["participants", "budget", "efficiency", "quality"]]
 
-        X = df[["participants", "budget", "efficiency", "quality"]]
-        df["score"] = model.predict(X)
+    df["score"] = model.predict(X)
 
-        results = []
-
-        for i, row in df.iterrows():
-            results.append({
-                "title": f"Activity {i+1}",
-                "participants": int(row["participants"]),
-                "budget": float(row["budget"]),
-                "predicted_score": float(row["score"]),
-                "barangay_id": 1  # IMPORTANT FIX
-            })
-
-        # 🔥 SAVE FILE FOR PHP
-        with open("../ml/ml_results.json", "w") as f:
-            json.dump(results, f, indent=4)
-
-        return jsonify({
-            "status": "success",
-            "saved_records": len(results)
-        })
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-        
+    return jsonify({
+        "status": "ok",
+        "mean_score": float(df["score"].mean())
+    })
 
 # ================= RUN =================
-
 if __name__ == "__main__":
+    import os
     port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port, debug=False)
+    app.run(host="0.0.0.0", port=port)
