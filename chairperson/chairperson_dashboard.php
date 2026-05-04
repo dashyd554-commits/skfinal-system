@@ -19,7 +19,7 @@ $stmt = $conn->prepare("
     AND status != 'cancelled'
 ");
 $stmt->execute([':bid' => $barangay_id, ':uid' => $user_id]);
-$totalProposals = $stmt->fetchColumn();
+$totalProposals = (int)$stmt->fetchColumn();
 
 /* ================= APPROVED ================= */
 $stmt = $conn->prepare("
@@ -30,7 +30,7 @@ $stmt = $conn->prepare("
     AND status = 'approved'
 ");
 $stmt->execute([':bid' => $barangay_id, ':uid' => $user_id]);
-$approved = $stmt->fetchColumn();
+$approved = (int)$stmt->fetchColumn();
 
 /* ================= REJECTED ================= */
 $stmt = $conn->prepare("
@@ -41,13 +41,12 @@ $stmt = $conn->prepare("
     AND status = 'rejected'
 ");
 $stmt->execute([':bid' => $barangay_id, ':uid' => $user_id]);
-$rejected = $stmt->fetchColumn();
+$rejected = (int)$stmt->fetchColumn();
 
 /* ================= PENDING ================= */
-$pending = $totalProposals - ($approved + $rejected);
-if($pending < 0){ $pending = 0; }
+$pending = max(0, $totalProposals - ($approved + $rejected));
 
-/* ================= BUDGET INFO ================= */
+/* ================= BUDGET ================= */
 $stmt = $conn->prepare("
     SELECT total_amount, remaining_budget
     FROM budgets
@@ -58,42 +57,44 @@ $stmt = $conn->prepare("
 $stmt->execute([':bid' => $barangay_id]);
 $budgetInfo = $stmt->fetch(PDO::FETCH_ASSOC);
 
-$totalAnnualBudget = $budgetInfo['total_amount'] ?? 0;
-$remainingBudget   = $budgetInfo['remaining_budget'] ?? 0;
+$totalAnnualBudget = (float)($budgetInfo['total_amount'] ?? 0);
+$remainingBudget   = (float)($budgetInfo['remaining_budget'] ?? 0);
 
-/* ================= USED BUDGET ================= */
 $stmt = $conn->prepare("
     SELECT COALESCE(SUM(amount),0)
     FROM budget_transactions
     WHERE barangay_id = :bid
 ");
 $stmt->execute([':bid' => $barangay_id]);
-$totalUsedBudget = $stmt->fetchColumn();
+$totalUsedBudget = (float)$stmt->fetchColumn();
 
-/* ================= ML API CALL ================= */
+/* ================= ML API ================= */
 $url = "https://skfinal-system.onrender.com/predict";
 
 $payload = [
     "barangay_id" => $barangay_id,
-    "total_budget" => (float)$totalAnnualBudget,
-    "used_budget" => (float)$totalUsedBudget,
-    "remaining_budget" => (float)$remainingBudget,
-    "approved" => (int)$approved,
-    "rejected" => (int)$rejected,
-    "pending" => (int)$pending,
-    "total_projects" => (int)$totalProposals
+    "total_budget" => $totalAnnualBudget,
+    "used_budget" => $totalUsedBudget,
+    "remaining_budget" => $remainingBudget,
+    "approved" => $approved,
+    "rejected" => $rejected,
+    "pending" => $pending,
+    "total_projects" => $totalProposals
 ];
 
 $ch = curl_init($url);
+
 curl_setopt_array($ch, [
     CURLOPT_RETURNTRANSFER => true,
     CURLOPT_POST => true,
     CURLOPT_HTTPHEADER => [
-        "Content-Type: application/json"
+        "Content-Type: application/json",
+        "Accept: application/json"
     ],
     CURLOPT_POSTFIELDS => json_encode($payload),
-    CURLOPT_TIMEOUT => 20,
-    CURLOPT_CONNECTTIMEOUT => 10
+    CURLOPT_TIMEOUT => 25,
+    CURLOPT_CONNECTTIMEOUT => 10,
+    CURLOPT_SSL_VERIFYPEER => false
 ]);
 
 $response = curl_exec($ch);
@@ -101,7 +102,7 @@ $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 $curl_error = curl_error($ch);
 curl_close($ch);
 
-/* ================= SAFE DEFAULTS ================= */
+/* ================= DEFAULT ML ================= */
 $ml_online = false;
 $mean_score = 0;
 $category = "No Data";
@@ -109,38 +110,35 @@ $success_probability = 0;
 $budget_efficiency = 0;
 $recommendation = "No recommendation available";
 
-/* ================= STRICT PARSE ================= */
-if ($http_code == 200 && !empty($response)) {
+/* ================= SAFE PARSE ================= */
+if ($http_code === 200 && $response) {
 
     $decoded = json_decode($response, true);
 
     if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
 
-        // IMPORTANT: support different API formats
-        $mean_score = floatval(
+        $mean_score = (float)(
             $decoded['mean_score'] ??
-            $decoded['score'] ??
             $decoded['budget_efficiency_score'] ??
-            0
+            $decoded['score'] ?? 0
         );
 
-        $budget_efficiency = $mean_score;
+        $budget_efficiency = round($mean_score, 2);
 
-        // ===== AI LOGIC (CLEAN FIXED VERSION) =====
         if ($mean_score >= 70) {
             $category = "High Performance";
             $success_probability = 0.85;
-            $recommendation = "Strong barangay performance. Expand youth programs and maintain funding efficiency.";
+            $recommendation = "Strong performance. Expand programs and maintain efficiency.";
         }
         elseif ($mean_score >= 40) {
             $category = "Moderate Performance";
             $success_probability = 0.60;
-            $recommendation = "Stable performance. Improve proposal quality and increase participation.";
+            $recommendation = "Stable execution. Improve proposal quality and participation.";
         }
         elseif ($mean_score > 0) {
             $category = "Low Performance";
             $success_probability = 0.30;
-            $recommendation = "Improve planning, execution, and budget utilization.";
+            $recommendation = "Improve planning, execution, and budgeting.";
         }
 
         $ml_online = true;
@@ -163,7 +161,7 @@ $trend = $stmt->fetchAll(PDO::FETCH_ASSOC);
 $labels = [];
 $data = [];
 
-foreach($trend as $t){
+foreach ($trend as $t) {
     $labels[] = $t['date'];
     $data[] = $t['total'];
 }
@@ -209,9 +207,7 @@ h2{
     gap:15px;
 }
 
-.row.top .card{
-    flex:1;
-}
+.row.top .card{ flex:1; }
 
 .row.bottom{
     justify-content:center;
@@ -232,9 +228,7 @@ h2{
     margin-bottom:20px;
 }
 
-.card h2{
-    color:#1e3c72;
-}
+.card h2{ color:#1e3c72; }
 
 .ml-box,.chart-box{
     text-align:left;
@@ -246,11 +240,9 @@ h2{
         width:100%;
         padding:10px;
     }
-
     .row{
         flex-direction:column;
     }
-
     .row.bottom .card{
         width:100%;
     }
@@ -293,7 +285,7 @@ h2{
         <p><b>Recommendation:</b> <?= htmlspecialchars($recommendation) ?></p>
     <?php else: ?>
         <p style="color:#ffcccc;">AI service unavailable.</p>
-        <small>HTTP CODE: <?= $http_code ?> | CURL ERROR: <?= $curl_error ?></small>
+        <small>HTTP: <?= $http_code ?> | ERROR: <?= $curl_error ?></small>
     <?php endif; ?>
 </div>
 
@@ -316,9 +308,6 @@ new Chart(document.getElementById('chart'), {
             tension:0.3,
             fill:false
         }]
-    },
-    options:{
-        responsive:true
     }
 });
 </script>
