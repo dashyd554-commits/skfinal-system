@@ -1,91 +1,68 @@
-from flask import Flask, jsonify
-import pandas as pd
-import psycopg2
+from flask import Flask, jsonify, request
+from flask_cors import CORS
 import os
-from sklearn.ensemble import RandomForestRegressor
 
 app = Flask(__name__)
+CORS(app)
 
-# ================= DB CONNECTION =================
-def get_connection():
-    return psycopg2.connect(
-        host=os.getenv("DB_HOST"),
-        database=os.getenv("DB_NAME"),
-        user=os.getenv("DB_USER"),
-        password=os.getenv("DB_PASSWORD"),
-        port=os.getenv("DB_PORT", "5432")
-    )
-
-# ================= LOAD DATA =================
-def load_data():
-    conn = get_connection()
-
-    query = """
-    SELECT 
-        COALESCE(participants,0) AS participants,
-        COALESCE(allocated_budget,1) AS budget,
-        COALESCE(evaluation_score,0) AS evaluation_score
-    FROM activities
-    WHERE allocated_budget IS NOT NULL
-    LIMIT 500
-    """
-
-    df = pd.read_sql_query(query, conn)
-    conn.close()
-
-    df["participants"] = pd.to_numeric(df["participants"], errors="coerce").fillna(0)
-    df["budget"] = pd.to_numeric(df["budget"], errors="coerce").fillna(1)
-    df["evaluation_score"] = pd.to_numeric(df["evaluation_score"], errors="coerce").fillna(0)
-
-    df["efficiency"] = df["participants"] / (df["budget"] + 1)
-    df["quality"] = df["evaluation_score"] / 100
-
-    return df
-
-# ================= TRAIN MODEL =================
-def train_model(df):
-    X = df[["participants", "budget", "efficiency", "quality"]]
-    y = (df["efficiency"] * 50) + (df["quality"] * 50)
-
-    model = RandomForestRegressor(n_estimators=100, random_state=42)
-    model.fit(X, y)
-    return model
-
-# ================= ROOT TEST =================
 @app.route("/")
 def home():
-    return jsonify({
-        "status": "running",
-        "message": "Flask API is working"
-    })
+    return "SK ML API RUNNING"
 
-# ================= PREDICT API =================
-@app.route("/predict")
+@app.route("/predict", methods=["POST"])
 def predict():
+
     try:
-        df = load_data()
+        data = request.get_json()
 
-        if df.empty:
-            return jsonify({"error": "No data"}), 400
+        total_budget = float(data.get("total_budget", 0))
+        used_budget = float(data.get("used_budget", 0))
+        remaining_budget = float(data.get("remaining_budget", 0))
+        approved_projects = int(data.get("approved_projects", 0))
+        rejected_projects = int(data.get("rejected_projects", 0))
+        pending_projects = int(data.get("pending_projects", 0))
+        total_projects = int(data.get("total_projects", 0))
 
-        model = train_model(df)
-        X = df[["participants", "budget", "efficiency", "quality"]]
+        if total_budget <= 0:
+            return jsonify({"error": "No budget data"}), 400
 
-        df["score"] = model.predict(X)
+        utilization = (used_budget / total_budget) * 100 if total_budget > 0 else 0
+        approval_rate = (approved_projects / total_projects) * 100 if total_projects > 0 else 0
+        rejection_penalty = (rejected_projects / total_projects) * 100 if total_projects > 0 else 0
+
+        score = (
+            utilization * 0.35 +
+            approval_rate * 0.45 +
+            (100 - rejection_penalty) * 0.20
+        )
+
+        score = round(score, 2)
+
+        if score >= 75:
+            category = "High Performance"
+            success_probability = 0.88
+            recommendation = "Barangay operations are excellent. Maintain active youth programs and continue strategic funding."
+        elif score >= 45:
+            category = "Moderate Performance"
+            success_probability = 0.64
+            recommendation = "Barangay performance is stable. Increase proposal completion rate and improve budget usage."
+        else:
+            category = "Low Performance"
+            success_probability = 0.32
+            recommendation = "Barangay performance is below target. Strengthen planning, proposal approval, and project implementation."
 
         return jsonify({
             "status": "ok",
-            "mean_score": float(df["score"].mean())
+            "category": category,
+            "success_probability": success_probability,
+            "budget_efficiency_score": score,
+            "recommendation": recommendation
         })
 
     except Exception as e:
-        return jsonify({
-            "status": "error",
-            "message": str(e)
-        }), 500
+        return jsonify({"error": str(e)}), 500
 
 
-# ================= RUN (RENDER FIX) =================
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
