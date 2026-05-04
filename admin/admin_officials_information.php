@@ -199,7 +199,7 @@ body{
                     </div>
 
                     <div class="actions">
-                        <a class="edit" href="admin_edit.php?id=<?= $o['id'] ?>">✏ Edit</a>
+                        <a class="edit" href="admin_edit_account.php?id=<?= $o['id'] ?>">✏ Edit</a>
                         <a class="delete" href="admin_delete.php?id=<?= $o['id'] ?>"
                            onclick="return confirm('Delete this account?')">
                            🗑 Delete

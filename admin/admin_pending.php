@@ -163,64 +163,89 @@ $barangays = $stmt->fetchAll(PDO::FETCH_ASSOC);
 body{
     background:url('../assets/bg.jpg') no-repeat center center fixed;
     background-size:cover;
+    min-height:100vh;
 }
 
+/* ================= MAIN LAYOUT ================= */
 .main{
     margin-left:190px;
     width:calc(100% - 190px);
     padding:20px;
+    min-height:100vh;
 }
 
-@media(max-width:768px){
+/* TABLET + MOBILE */
+@media(max-width:1024px){
     .main{
         margin-left:0;
         width:100%;
+        padding:15px;
     }
 }
 
+/* ================= HEADER ================= */
 .header{
     text-align:center;
     color:white;
     margin-bottom:20px;
 }
 
+.header h2{
+    font-size:24px;
+}
+
+.header p{
+    font-size:14px;
+    opacity:0.9;
+}
+
+/* ================= FORM BOX ================= */
 .form-box{
     background:rgba(255,255,255,0.15);
-    backdrop-filter:blur(15px);
+    backdrop-filter:blur(18px);
     padding:20px;
     border-radius:15px;
     margin-bottom:20px;
+    max-width:600px;
+    margin-inline:auto;
 }
 
+/* ================= INPUTS ================= */
 input, select{
     width:100%;
-    padding:10px;
-    margin:8px 0;
+    padding:12px;
+    margin:10px 0;
     border:none;
     border-radius:8px;
+    font-size:14px;
 }
 
+/* ================= BUTTON ================= */
 button{
     width:100%;
-    padding:10px;
+    padding:12px;
     background:#1e3c72;
     color:white;
     border:none;
     border-radius:8px;
     cursor:pointer;
     font-weight:bold;
+    font-size:15px;
 }
 
 button:hover{
     opacity:0.9;
 }
 
+/* ================= MESSAGE ================= */
 .message{
     padding:12px;
     border-radius:8px;
     font-weight:bold;
-    margin-bottom:10px;
+    margin-bottom:15px;
     text-align:center;
+    max-width:600px;
+    margin-inline:auto;
 }
 
 .message.success{
@@ -235,6 +260,7 @@ button:hover{
     border:1px solid #f5c2c7;
 }
 
+/* ================= FOOTER ================= */
 .footer{
     width:100%;
     text-align:center;
@@ -246,16 +272,40 @@ button:hover{
     font-size:13px;
 }
 
-html, body{
-    overflow-x:hidden;
-}
-
+/* ================= MOBILE FIX ================= */
 @media(max-width:768px){
+
+    .main{
+        padding:12px;
+    }
+
+    .header h2{
+        font-size:20px;
+    }
+
+    .form-box{
+        padding:15px;
+        border-radius:12px;
+    }
+
+    input, select, button{
+        font-size:14px;
+        padding:10px;
+    }
+
+    .message{
+        font-size:13px;
+    }
+
     .footer{
         font-size:11px;
         padding:10px;
-        margin-bottom:10px;
     }
+}
+
+/* prevent horizontal scroll */
+html, body{
+    overflow-x:hidden;
 }
 </style>
 </head>

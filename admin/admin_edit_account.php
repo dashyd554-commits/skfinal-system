@@ -2,8 +2,7 @@
 session_start();
 include '../config/db.php';
 
-/* ================= SECURITY CHECK ================= */
-if (!isset($_SESSION['user']) || $_SESSION['user']['role'] !== 'municipal_admin') {
+if (!isset($_SESSION['admin'])) {
     header("Location: ../index.php");
     exit();
 }
@@ -37,7 +36,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $username = trim($_POST['username'] ?? '');
     $role = $_POST['role'] ?? '';
     $status = $_POST['status'] ?? '';
-    $password = $_POST['password'] ?? ''; // ✅ NEW
+    $plain_password = $_POST['plain_password'] ?? ''; // ✅ NEW
 
     /* ================= VALIDATION ================= */
 
@@ -57,7 +56,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         /* ================= DUPLICATE CHECK (FULL NAME) ================= */
         else {
-            $stmt = $conn->prepare("SELECT id FROM users WHERE full_name = ? AND id != ?");
+            $stmt = $conn->prepare("SELECT id FROM users WHERE fullname = ? AND id != ?");
             $stmt->execute([$fullname, $id]);
 
             if ($stmt->fetch()) {
@@ -67,19 +66,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             else {
 
                 /* ================= PASSWORD HANDLING ================= */
-                if (!empty($password)) {
+                if (!empty($plain_password)) {
 
-                    if (strlen($password) < 8) {
+                    if (strlen($plain_password) < 8) {
                         $message = "❌ Password must be at least 8 characters!";
                     }
 
                     else {
-                        $hashed = password_hash($password, PASSWORD_DEFAULT);
-                        $plain = $password;
+                        $hashed = password_hash($plain_password, PASSWORD_DEFAULT);
+                        $plain = $plain_password;
                     }
 
                 } else {
-                    $hashed = $user['password'];
+                    $hashed = $user['plain_password'];
                     $plain = $user['plain_password'];
                 }
 
@@ -88,10 +87,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     /* ================= UPDATE ================= */
                     $stmt = $conn->prepare("
                         UPDATE users SET
-                            full_name = ?,
+                            fullname = ?,
                             age = ?,
                             username = ?,
-                            password = ?,
                             plain_password = ?,
                             role = ?,
                             status = ?
@@ -102,7 +100,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $fullname,
                         $age,
                         $username,
-                        $hashed,
                         $plain,
                         $role,
                         $status,
@@ -112,7 +109,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if ($updated) {
                         echo "<script>
                             alert('✅ Account updated successfully!');
-                            window.location='admin_official_information.php';
+                            window.location='admin_officials_information.php';
                         </script>";
                         exit();
                     } else {
@@ -244,14 +241,14 @@ html, body{
 
     <form method="POST">
 
-        <input type="text" name="fullname" value="<?= htmlspecialchars($user['full_name'] ?? '') ?>" required>
+        <input type="text" name="fullname" value="<?= htmlspecialchars($user['fullname'] ?? '') ?>" required>
 
         <input type="number" name="age" value="<?= htmlspecialchars($user['age'] ?? '') ?>" required>
 
         <input type="text" name="username" value="<?= htmlspecialchars($user['username']) ?>" required>
 
         <!-- ✅ PASSWORD EDIT FIELD -->
-        <input type="text" name="password" placeholder="Enter new password (leave blank to keep old)">
+        <input type="text" name="plain_password" placeholder="Enter new password (leave blank to keep old)">
 
         <select name="role" required>
             <option value="chairman" <?= $user['role']=='chairman'?'selected':'' ?>>Chairman</option>
@@ -267,7 +264,7 @@ html, body{
 
         <div class="btn-group">
             <button type="submit">✅ Update Account</button>
-            <a class="cancel" href="admin_official_information.php">❌ Cancel</a>
+            <a class="cancel" href="admin_officials_information.php">❌ Cancel</a>
         </div>
 
     </form>
