@@ -1,5 +1,5 @@
-flask
-pandas
+Flask
+flask-cors
 psycopg2-binary
+pandas
 scikit-learn
-gunicorn

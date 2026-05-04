@@ -1,77 +1,105 @@
 from flask import Flask, request, jsonify
+from flask_cors import CORS
+import pandas as pd
+import psycopg2
+import os
+from sklearn.ensemble import RandomForestRegressor
 
 app = Flask(__name__)
+CORS(app)
 
-# ================= ROOT TEST =================
-@app.route("/", methods=["GET"])
-def home():
-    return jsonify({
-        "status": "running",
-        "message": "SK ML API is active"
-    })
-
-# ================= PREDICT =================
-@app.route("/predict", methods=["POST"])
-def predict():
-    data = request.get_json()
-
-    if not data:
-        return jsonify({
-            "error": "No JSON received"
-        }), 400
-
-    # ================= INPUTS =================
-    total_budget = float(data.get("total_budget", 0))
-    used_budget = float(data.get("used_budget", 0))
-    approved = int(data.get("approved_projects", 0))
-    rejected = int(data.get("rejected_projects", 0))
-    total_projects = int(data.get("total_projects", 0))
-
-    # ================= VALIDATION =================
-    if total_budget <= 0:
-        return jsonify({
-            "error": "Invalid budget data"
-        }), 400
-
-    # ================= COMPUTE METRICS =================
-    utilization = (used_budget / total_budget) * 100 if total_budget else 0
-
-    approval_rate = (approved / total_projects) * 100 if total_projects > 0 else 0
-
-    rejection_rate = (rejected / total_projects) * 100 if total_projects > 0 else 0
-
-    # ================= SIMPLE ML SCORE =================
-    score = (
-        utilization * 0.5 +
-        approval_rate * 0.4 -
-        rejection_rate * 0.2
+# ================= DB =================
+def get_connection():
+    return psycopg2.connect(
+        host=os.getenv("DB_HOST"),
+        database=os.getenv("DB_NAME"),
+        user=os.getenv("DB_USER"),
+        password=os.getenv("DB_PASSWORD"),
+        port=os.getenv("DB_PORT", "5432")
     )
 
-    # ================= CLASSIFICATION =================
-    if score >= 70:
-        category = "High Performance"
-        probability = 0.85
-        recommendation = "Excellent performance. Maintain current strategy and expand programs."
-    elif score >= 40:
-        category = "Moderate Performance"
-        probability = 0.60
-        recommendation = "Stable execution. Improve proposal quality and participation rate."
-    else:
-        category = "Low Performance"
-        probability = 0.30
-        recommendation = "Weak performance. Improve planning, execution, and budget usage."
+# ================= LOAD DATA =================
+def load_data():
+    conn = get_connection()
 
-    # ================= RESPONSE =================
-    return jsonify({
-        "category": category,
-        "success_probability": round(probability, 2),
-        "budget_efficiency_score": round(score, 2),
-        "utilization": round(utilization, 2),
-        "recommendation": recommendation
-    })
+    query = """
+    SELECT 
+        COALESCE(participants,0) AS participants,
+        COALESCE(allocated_budget,1) AS budget,
+        COALESCE(evaluation_score,0) AS evaluation_score
+    FROM activities
+    LIMIT 500
+    """
+
+    df = pd.read_sql(query, conn)
+    conn.close()
+
+    df["participants"] = pd.to_numeric(df["participants"], errors="coerce").fillna(0)
+    df["budget"] = pd.to_numeric(df["budget"], errors="coerce").fillna(1)
+    df["evaluation_score"] = pd.to_numeric(df["evaluation_score"], errors="coerce").fillna(0)
+
+    df["efficiency"] = df["participants"] / (df["budget"] + 1)
+    df["quality"] = df["evaluation_score"] / 100
+
+    return df
+
+# ================= TRAIN MODEL =================
+def train_model(df):
+    X = df[["participants", "budget", "efficiency", "quality"]]
+    y = (df["efficiency"] * 50) + (df["quality"] * 50)
+
+    model = RandomForestRegressor(n_estimators=100, random_state=42)
+    model.fit(X, y)
+
+    return model
+
+# ================= HEALTH CHECK =================
+@app.route("/")
+def home():
+    return jsonify({"status": "ML API running"})
+
+# ================= PREDICT =================
+@app.route("/predict", methods=["POST", "GET"])
+def predict():
+    try:
+        df = load_data()
+
+        if df.empty:
+            return jsonify({"error": "No data available"}), 400
+
+        model = train_model(df)
+
+        X = df[["participants", "budget", "efficiency", "quality"]]
+        df["score"] = model.predict(X)
+
+        mean_score = float(df["score"].mean())
+
+        # SIMPLE CATEGORY LOGIC
+        if mean_score >= 70:
+            category = "High Performance"
+            prob = 0.85
+            rec = "Maintain strong programs"
+        elif mean_score >= 40:
+            category = "Moderate Performance"
+            prob = 0.60
+            rec = "Improve proposal quality and participation rate"
+        else:
+            category = "Low Performance"
+            prob = 0.30
+            rec = "Improve execution and budgeting"
+
+        return jsonify({
+            "mean_score": mean_score,
+            "category": category,
+            "success_probability": prob,
+            "budget_efficiency_score": round(mean_score, 2),
+            "recommendation": rec
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 # ================= RUN =================
 if __name__ == "__main__":
-    import os
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)

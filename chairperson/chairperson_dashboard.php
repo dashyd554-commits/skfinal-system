@@ -73,13 +73,27 @@ $totalUsedBudget = $stmt->fetchColumn();
 /* ================= ML API CALL ================= */
 $url = "https://skfinal-system.onrender.com/predict";
 
+$payload = [
+    "barangay_id" => $barangay_id,
+    "total_budget" => (float)$totalAnnualBudget,
+    "used_budget" => (float)$totalUsedBudget,
+    "remaining_budget" => (float)$remainingBudget,
+    "approved" => (int)$approved,
+    "rejected" => (int)$rejected,
+    "pending" => (int)$pending,
+    "total_projects" => (int)$totalProposals
+];
+
 $ch = curl_init($url);
 curl_setopt_array($ch, [
     CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_POST => true,
+    CURLOPT_HTTPHEADER => [
+        "Content-Type: application/json"
+    ],
+    CURLOPT_POSTFIELDS => json_encode($payload),
     CURLOPT_TIMEOUT => 20,
-    CURLOPT_CONNECTTIMEOUT => 10,
-    CURLOPT_SSL_VERIFYPEER => false,
-    CURLOPT_FOLLOWLOCATION => true
+    CURLOPT_CONNECTTIMEOUT => 10
 ]);
 
 $response = curl_exec($ch);
@@ -87,7 +101,7 @@ $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 $curl_error = curl_error($ch);
 curl_close($ch);
 
-/* ================= SAFE AI DEFAULTS ================= */
+/* ================= SAFE DEFAULTS ================= */
 $ml_online = false;
 $mean_score = 0;
 $category = "No Data";
@@ -95,28 +109,38 @@ $success_probability = 0;
 $budget_efficiency = 0;
 $recommendation = "No recommendation available";
 
-/* ================= PARSE AI ================= */
-if ($response && $http_code == 200) {
+/* ================= STRICT PARSE ================= */
+if ($http_code == 200 && !empty($response)) {
+
     $decoded = json_decode($response, true);
 
-    if (json_last_error() === JSON_ERROR_NONE) {
-        $mean_score = floatval($decoded['mean_score'] ?? 0);
-        $budget_efficiency = round($mean_score,2);
+    if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
 
+        // IMPORTANT: support different API formats
+        $mean_score = floatval(
+            $decoded['mean_score'] ??
+            $decoded['score'] ??
+            $decoded['budget_efficiency_score'] ??
+            0
+        );
+
+        $budget_efficiency = $mean_score;
+
+        // ===== AI LOGIC (CLEAN FIXED VERSION) =====
         if ($mean_score >= 70) {
             $category = "High Performance";
             $success_probability = 0.85;
-            $recommendation = "Barangay operations are performing strongly. Maintain and expand approved youth programs.";
+            $recommendation = "Strong barangay performance. Expand youth programs and maintain funding efficiency.";
         }
         elseif ($mean_score >= 40) {
             $category = "Moderate Performance";
             $success_probability = 0.60;
-            $recommendation = "Barangay has stable project execution. Improve proposal quality and participation rate.";
+            $recommendation = "Stable performance. Improve proposal quality and increase participation.";
         }
         elseif ($mean_score > 0) {
             $category = "Low Performance";
             $success_probability = 0.30;
-            $recommendation = "Barangay needs stronger planning, approval management, and budget optimization.";
+            $recommendation = "Improve planning, execution, and budget utilization.";
         }
 
         $ml_online = true;
