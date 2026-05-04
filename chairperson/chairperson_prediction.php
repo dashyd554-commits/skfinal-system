@@ -26,11 +26,14 @@ if(file_exists($mlFile)){
     }
 }
 
-/* ================= DEFAULT ================= */
+/* ================= DEFAULT VALUES ================= */
 $totalParticipants = 0;
 $totalActivities = count($results);
 $topActivity = "No Data";
-$topScore = 0;
+$topImpact = 0;
+$avgImpact = 0;
+$avgUtilization = 0;
+$topRecommendation = "No Recommendation";
 
 function normalizeScore($score){
     $score = floatval($score);
@@ -39,18 +42,26 @@ function normalizeScore($score){
     return round($score,2);
 }
 
-
 /* ================= PROCESS ML ================= */
 if(!empty($results)){
 
-    usort($results, fn($a,$b)=>$b['predicted_score'] <=> $a['predicted_score']);
+    usort($results, fn($a,$b)=>$b['predicted_impact'] <=> $a['predicted_impact']);
+
+    $impactSum = 0;
+    $utilSum = 0;
 
     foreach($results as $r){
         $totalParticipants += (int)($r['participants'] ?? 0);
+        $impactSum += (float)($r['predicted_impact'] ?? 0);
+        $utilSum += (float)($r['budget_utilization'] ?? 0);
     }
 
+    $avgImpact = normalizeScore($impactSum / count($results));
+    $avgUtilization = normalizeScore($utilSum / count($results));
+
     $topActivity = $results[0]['title'] ?? 'N/A';
-    $topScore = normalizeScore($results[0]['predicted_score'] ?? 0);
+    $topImpact = normalizeScore($results[0]['predicted_impact'] ?? 0);
+    $topRecommendation = $results[0]['recommendation'] ?? 'Maintain';
 }
 
 /* ================= GET REAL BUDGET ================= */
@@ -69,283 +80,29 @@ $usedBudget = $budgetData['used_amount'] ?? 0;
 $remainingBudget = $budgetData['remaining_budget'] ?? ($annualBudget - $usedBudget);
 
 /* ================= AI CONCLUSION ================= */
-if($topScore >= 70){
-    $conclusion = "High engagement detected. Existing successful activities can be expanded for stronger barangay impact.";
-    $impact = "Allocate more funds to high-performing community programs.";
+if($avgImpact >= 80){
+    $conclusion = "AI analysis shows this barangay is highly efficient in implementing youth-centered programs with strong projected municipal impact.";
+    $impact = "Municipal funding may be expanded for larger youth development initiatives.";
 }
-elseif($topScore >= 40){
-    $conclusion = "Moderate engagement detected. Some activities perform well but several need strategic enhancement.";
-    $impact = "Improve scheduling, promotions, and youth participation initiatives.";
+elseif($avgImpact >= 60){
+    $conclusion = "AI analysis shows moderate barangay performance with several successful activities requiring continuity and monitoring.";
+    $impact = "Maintain current budget while strengthening participation strategy.";
 }
 else{
-    $conclusion = "Low engagement detected. Current activities show weak participation and limited impact.";
-    $impact = "Rebuild project planning and conduct stronger needs assessment.";
+    $conclusion = "AI analysis shows low predicted impact. Existing activities require restructuring for stronger youth engagement.";
+    $impact = "Budget optimization and improved project planning are strongly advised.";
 }
 
-/* ================= AI SUGGESTIONS ================= */
+/* ================= SMART AI SUGGESTIONS ================= */
 $suggestions = [];
-$suggestions[] = "Prioritize successful activities similar to ".$topActivity;
-$suggestions[] = "Use barangay youth surveys before planning projects.";
-$suggestions[] = "Improve attendance through incentive-based participation.";
-$suggestions[] = "Allocate budget based on ML predicted effectiveness.";
+$suggestions[] = "Prioritize replication of high-performing activity: ".$topActivity;
+$suggestions[] = "Increase youth attendance using digital survey and incentive campaigns.";
+$suggestions[] = "Allocate more resources to programs with high AI impact score.";
+$suggestions[] = "Reduce spending on low-engagement activity patterns.";
+$suggestions[] = "Strengthen council project generation to improve implementation confidence.";
 
 /* ================= BUDGET FORECAST ================= */
-$growthRate = $topScore / 100;
-$projectedIncrease = $remainingBudget * ($growthRate * 0.25);
+$growthRate = $avgImpact / 100;
+$projectedIncrease = $remainingBudget * ($growthRate * 0.30);
 $futureBudget = $remainingBudget + $projectedIncrease;
 ?>
-
-<!DOCTYPE html>
-<html>
-<head>
-<title>Chairperson ML Prediction</title>
-
-<link rel="stylesheet" href="../assets/style.css">
-<link rel="stylesheet" href="../assets/sbstyle.css">
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
-<style>
-body{
-    margin:0;
-    background:url('../assets/bg.jpg') no-repeat center center fixed;
-    background-size:cover;
-    overflow-x:hidden;
-}
-
-.main{
-    margin-left:190px;
-    padding:20px;
-    width:calc(100% - 210px);
-    overflow-x:hidden;
-}
-
-.grid{
-    display:grid;
-    grid-template-columns:repeat(4,1fr);
-    gap:15px;
-    margin-bottom:20px;
-}
-
-.glass{
-    background:rgba(255,255,255,0.20);
-    backdrop-filter:blur(20px);
-    border-radius:15px;
-    padding:20px;
-    margin-bottom:20px;
-    box-shadow:0 8px 20px rgba(0,0,0,0.15);
-    color:white;
-}
-
-.card{
-    text-align:center;
-}
-.card h2{color: #1e3c72;}
-table{
-    width:100%;
-    border-collapse:collapse;
-    margin-top:10px;
-    background:rgba(255,255,255,0.1);
-}
-
-th{
-    background:#1e3c72;
-    color:white;
-    padding:12px;
-}
-
-td{
-    padding:10px;
-    text-align:center;
-    border-bottom:1px solid rgba(255,255,255,0.2);
-    color:#1e3c72;
-}
-
-.chart-grid{
-    display:grid;
-    grid-template-columns:1fr 1fr;
-    gap:20px;
-}
-p{color: #1e3c72;}
-li{color: #1e3c72;}
-
-@media(max-width:1000px){
-    .grid{
-        grid-template-columns:repeat(2,1fr);
-    }
-    .chart-grid{
-        grid-template-columns:1fr;
-    }
-}
-
-@media(max-width:768px){
-    .grid{
-        grid-template-columns:1fr;
-    }
-    .main{
-        margin-left:70px;
-        width:calc(100% - 80px);
-    }
-}
-</style>
-</head>
-
-<body>
-
-<?php include '../assets/sidebar.php'; ?>
-
-<div class="main">
-
-    <div class="header">
-        <h2>🤖 AI ML Prediction Dashboard</h2>
-        <p style="color:white;">Smart forecast based on approved budget deductions only</p>
-    </div>
-
-    <!-- KPI -->
-    <div class="grid">
-
-        <div class="glass card">
-            <h3>Annual Budget</h3>
-            <h2>₱<?= number_format($annualBudget,2) ?></h2>
-        </div>
-
-        <div class="glass card">
-            <h3>Used Budget</h3>
-            <h2>₱<?= number_format($usedBudget,2) ?></h2>
-        </div>
-
-        <div class="glass card">
-            <h3>Remaining Budget</h3>
-            <h2>₱<?= number_format($remainingBudget,2) ?></h2>
-        </div>
-
-        <div class="glass card">
-            <h3>Top ML Score</h3>
-            <h2><?= $topScore ?>%</h2>
-        </div>
-
-    </div>
-
-    <!-- TOP ACTIVITY -->
-    <div class="glass">
-        <h3>🏆 Top Recommended Activity</h3>
-        <p><b><?= htmlspecialchars($topActivity) ?></b> is predicted as the strongest engagement driver.</p>
-    </div>
-
-    <!-- AI CONCLUSION -->
-    <div class="glass">
-        <h3>📌 AI Conclusion</h3>
-        <p><?= htmlspecialchars($conclusion) ?></p>
-        <hr>
-        <p><b>Expected Strategic Impact:</b> <?= htmlspecialchars($impact) ?></p>
-    </div>
-
-    <!-- BUDGET FORECAST -->
-    <div class="glass">
-        <h3>💰 Future Budget Forecast</h3>
-        <p>Current Remaining Budget: ₱<?= number_format($remainingBudget,2) ?></p>
-        <p>Projected Increase Capacity: ₱<?= number_format($projectedIncrease,2) ?></p>
-        <h3>Forecasted Available Budget: ₱<?= number_format($futureBudget,2) ?></h3>
-    </div>
-
-    <!-- RECOMMENDATIONS -->
-    <div class="glass">
-        <h3>💡 AI Recommendations</h3>
-        <ul>
-            <?php foreach($suggestions as $s){ ?>
-                <li><?= htmlspecialchars($s) ?></li>
-            <?php } ?>
-        </ul>
-    </div>
-
-    <!-- CHARTS -->
-    <div class="chart-grid">
-
-        <div class="glass">
-            <h3>📈 ML Score Comparison</h3>
-            <canvas id="scoreChart"></canvas>
-        </div>
-
-        <div class="glass">
-            <h3>👥 Participants & Activities</h3>
-            <canvas id="partChart"></canvas>
-        </div>
-
-    </div>
-
-    <!-- TABLE -->
-    <div class="glass">
-        <h3>📊 ML Results Table</h3>
-
-        <table>
-            <tr>
-                <th>Activity</th>
-                <th>Participants</th>
-                <th>Budget</th>
-                <th>Predicted Score</th>
-            </tr>
-
-            <?php if(!empty($results)){ ?>
-                <?php foreach($results as $r){ ?>
-                <tr>
-                    <td><?= htmlspecialchars($r['title']) ?></td>
-                    <td><?= (int)$r['participants'] ?></td>
-                    <td>₱<?= number_format($r['budget'],2) ?></td>
-                    <td><?= normalizeScore($r['predicted_score']) ?>%</td>
-                </tr>
-                <?php } ?>
-            <?php } else { ?>
-                <tr>
-                    <td colspan="4">No ML data available. Run train_model.py first.</td>
-                </tr>
-            <?php } ?>
-        </table>
-    </div>
-
-</div>
-
-<script>
-const labels = <?= json_encode(array_column($results,'title')) ?>;
-const scores = <?= json_encode(array_map(fn($r)=>normalizeScore($r['predicted_score']),$results)) ?>;
-const participants = <?= json_encode(array_column($results,'participants')) ?>;
-const activities = <?= json_encode(array_fill(0,count($results),1)) ?>;
-
-new Chart(document.getElementById('scoreChart'),{
-    type:'bar',
-    data:{
-        labels:labels,
-        datasets:[{
-            label:'Predicted ML Score',
-            data:scores
-        }]
-    },
-    options:{
-        responsive:true,
-        scales:{
-            y:{beginAtZero:true,max:100}
-        }
-    }
-});
-
-new Chart(document.getElementById('partChart'),{
-    type:'line',
-    data:{
-        labels:labels,
-        datasets:[
-            {
-                label:'Participants',
-                data:participants
-            },
-            {
-                label:'Activities',
-                data:activities
-            }
-        ]
-    },
-    options:{
-        responsive:true
-    }
-});
-</script>
-
-</body>
-</html>

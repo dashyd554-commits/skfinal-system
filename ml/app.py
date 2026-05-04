@@ -2,7 +2,8 @@ from flask import Flask, jsonify
 import pandas as pd
 import psycopg2
 import os
-from sklearn.ensemble import RandomForestRegressor
+import pickle
+import json
 
 app = Flask(__name__)
 
@@ -16,19 +17,40 @@ def get_connection():
         port=os.getenv("DB_PORT", "5432")
     )
 
-# ================= LOAD DATA =================
-def load_data():
+# ================= LOAD MODEL =================
+def load_model():
+    try:
+        with open("model.pkl", "rb") as f:
+            return pickle.load(f)
+    except:
+        return None
+
+# ================= LOAD LIVE DATA =================
+def load_live_data():
     try:
         conn = get_connection()
 
         query = """
         SELECT 
-            COALESCE(participants,0) AS participants,
-            COALESCE(allocated_budget,1) AS budget,
-            COALESCE(evaluation_score,0) AS evaluation_score,
-            COALESCE(status,'planned') AS status
-        FROM activities
-        LIMIT 200
+            a.id,
+            a.title,
+            a.barangay_id,
+            COALESCE(a.participants,0) AS participants,
+            COALESCE(a.evaluation_score,0) AS evaluation_score,
+            COALESCE(a.allocated_budget,0) AS allocated_budget,
+            COALESCE(b.total_amount,1) AS total_budget,
+            COALESCE(b.remaining_budget,0) AS remaining_budget,
+            COUNT(p.id) AS project_count
+        FROM activities a
+        LEFT JOIN budgets b 
+            ON a.barangay_id = b.barangay_id
+        LEFT JOIN projects p
+            ON a.id = p.activity_id
+        GROUP BY 
+            a.id, a.title, a.barangay_id,
+            a.participants, a.evaluation_score,
+            a.allocated_budget,
+            b.total_amount, b.remaining_budget
         """
 
         df = pd.read_sql_query(query, conn)
@@ -37,17 +59,26 @@ def load_data():
         if df.empty:
             return df
 
-        # ================= CLEAN DATA =================
-        df["participants"] = pd.to_numeric(df["participants"], errors="coerce").fillna(0)
-        df["budget"] = pd.to_numeric(df["budget"], errors="coerce").fillna(1)
-        df["evaluation_score"] = pd.to_numeric(df["evaluation_score"], errors="coerce").fillna(0)
+        # ================= CLEAN =================
+        numeric_cols = [
+            "participants",
+            "evaluation_score",
+            "allocated_budget",
+            "total_budget",
+            "remaining_budget",
+            "project_count"
+        ]
 
-        # prevent divide-by-zero + extreme values
-        df["budget"] = df["budget"].apply(lambda x: max(x, 100))
+        for col in numeric_cols:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+
+        df["total_budget"] = df["total_budget"].apply(lambda x: max(x,1))
 
         # ================= FEATURES =================
-        df["efficiency"] = df["participants"] / (df["budget"] + 1)
-        df["quality"] = df["evaluation_score"] / 100
+        df["budget_ratio"] = df["allocated_budget"] / df["total_budget"]
+        df["cost_per_participant"] = df["allocated_budget"] / (df["participants"] + 1)
+        df["implementation_strength"] = df["evaluation_score"] * (df["participants"] + 1)
+        df["budget_utilization"] = ((df["total_budget"] - df["remaining_budget"]) / df["total_budget"]) * 100
 
         return df
 
@@ -55,86 +86,83 @@ def load_data():
         print("DB ERROR:", e)
         return pd.DataFrame()
 
-# ================= TRAIN MODEL =================
-def train_model(df):
-    if df is None or df.empty:
-        return None
-
-    X = df[["participants", "budget", "efficiency", "quality"]]
-
-    # stable target (NO EXPLOSION)
-    y = (
-        df["efficiency"] * 50 +
-        df["quality"] * 50
-    )
-
-    model = RandomForestRegressor(
-        n_estimators=120,
-        max_depth=10,
-        random_state=42
-    )
-
-    model.fit(X, y)
-    return model
-
 # ================= HOME =================
 @app.route("/")
 def home():
-    return {"status": "ML API Running Successfully"}
+    return {"status": "Municipal Intelligence API Running"}
 
 # ================= PREDICT =================
-@app.route("/predict", methods=["GET", "POST"])
+@app.route("/predict")
 def predict():
+
     try:
-        df = load_data()
-
-        if df.empty:
-            return jsonify({
-                "error": "No data found in activities table",
-                "hint": "Check table or insert data"
-            }), 400
-
-        model = train_model(df)
+        model = load_model()
 
         if model is None:
             return jsonify({
-                "error": "Model training failed"
+                "error": "model.pkl not found. Run train_model.py first."
             }), 500
 
-        X = df[["participants", "budget", "efficiency", "quality"]]
+        df = load_live_data()
 
-        df["score"] = model.predict(X)
+        if df.empty:
+            return jsonify({
+                "error": "No activity data available."
+            }), 400
 
-        # ================= SAFE NORMALIZATION =================
-        avg_score = float(df["score"].clip(0, 100).mean())
+        X = df[[
+            "participants",
+            "evaluation_score",
+            "allocated_budget",
+            "budget_ratio",
+            "cost_per_participant",
+            "implementation_strength",
+            "budget_utilization",
+            "project_count"
+        ]]
 
-        # ================= CLASSIFICATION =================
-        if avg_score >= 75:
-            category = "High Performing Barangay"
-            recommendation = "Scale successful programs and increase funding"
-        elif avg_score >= 50:
-            category = "Moderate Performance"
-            recommendation = "Optimize participation and improve execution"
+        # ================= PREDICTION =================
+        df["predicted_impact"] = model.predict(X)
+        df = df.sort_values(by="predicted_impact", ascending=False)
+
+        avg_impact = round(float(df["predicted_impact"].mean()),2)
+        avg_budget_util = round(float(df["budget_utilization"].mean()),2)
+
+        # ================= CATEGORY =================
+        if avg_impact >= 80:
+            category = "High Performing Municipal Barangays"
+            funding_advice = "Eligible for increased development funding"
+        elif avg_impact >= 60:
+            category = "Moderately Performing Barangays"
+            funding_advice = "Maintain funding with strategic improvements"
         else:
-            category = "Low Performance Barangay"
-            recommendation = "Revise planning and increase community engagement"
+            category = "Low Performing Barangays"
+            funding_advice = "Require intervention and budget optimization"
+
+        # ================= TOP ACTIVITIES =================
+        top_activities = df.head(3)["title"].tolist()
+
+        # ================= AI RECOMMENDATION =================
+        if avg_budget_util >= 75:
+            recommendation = "Barangays are utilizing budget efficiently. Expand high-performing youth programs."
+        elif avg_budget_util >= 50:
+            recommendation = "Moderate utilization detected. Improve project monitoring and youth engagement."
+        else:
+            recommendation = "Low utilization detected. Reassess annual activity planning and budget distribution."
 
         return jsonify({
-            "category": category,
-            "success_probability": round(avg_score / 100, 2),
-            "budget_efficiency_score": round(avg_score, 2),
-            "recommendation": recommendation,
-            "total_records": len(df),
-            "debug": {
-                "mean_score": round(avg_score, 2),
-                "rows_used": len(df)
-            }
+            "performance_category": category,
+            "average_predicted_impact": avg_impact,
+            "average_budget_utilization": avg_budget_util,
+            "top_recommended_activities": top_activities,
+            "funding_advice": funding_advice,
+            "system_recommendation": recommendation,
+            "total_records_analyzed": len(df)
         })
 
     except Exception as e:
         return jsonify({
-            "error": str(e),
-            "hint": "Check DB connection or schema"
+            "error": str(e)
         }), 500
 
 # ================= RUN =================
