@@ -13,13 +13,13 @@ $barangay_id = $_SESSION['user']['barangay_id'];
 $mlFile = "../ml/ml_results.json";
 $results = [];
 
-if(file_exists($mlFile)){
+if (file_exists($mlFile)) {
     $json = file_get_contents($mlFile);
-    $decoded = json_decode($json,true);
+    $decoded = json_decode($json, true);
 
-    if(is_array($decoded)){
-        foreach($decoded as $row){
-            if(($row['barangay_id'] ?? 0) == $barangay_id){
+    if (is_array($decoded)) {
+        foreach ($decoded as $row) {
+            if (($row['barangay_id'] ?? 0) == $barangay_id) {
                 $results[] = $row;
             }
         }
@@ -27,46 +27,33 @@ if(file_exists($mlFile)){
 }
 
 /* ================= DEFAULT VALUES ================= */
-$totalParticipants = 0;
-$totalActivities = count($results);
+$topScore = 0;
 $topActivity = "No Data";
-$topImpact = 0;
-$avgImpact = 0;
-$avgUtilization = 0;
-$topRecommendation = "No Recommendation";
+$totalParticipants = 0;
 
 function normalizeScore($score){
     $score = floatval($score);
-    if($score < 0) return 0;
-    if($score > 100) return 100;
-    return round($score,2);
+    return max(0, min(100, round($score,2)));
 }
 
-/* ================= PROCESS ML ================= */
-if(!empty($results)){
+/* ================= PROCESS DATA ================= */
+if (!empty($results)) {
 
-    usort($results, fn($a,$b)=>$b['predicted_impact'] <=> $a['predicted_impact']);
+    usort($results, fn($a,$b) =>
+        ($b['predicted_score'] ?? 0) <=> ($a['predicted_score'] ?? 0)
+    );
 
-    $impactSum = 0;
-    $utilSum = 0;
-
-    foreach($results as $r){
+    foreach ($results as $r) {
         $totalParticipants += (int)($r['participants'] ?? 0);
-        $impactSum += (float)($r['predicted_impact'] ?? 0);
-        $utilSum += (float)($r['budget_utilization'] ?? 0);
     }
 
-    $avgImpact = normalizeScore($impactSum / count($results));
-    $avgUtilization = normalizeScore($utilSum / count($results));
-
-    $topActivity = $results[0]['title'] ?? 'N/A';
-    $topImpact = normalizeScore($results[0]['predicted_impact'] ?? 0);
-    $topRecommendation = $results[0]['recommendation'] ?? 'Maintain';
+    $topActivity = $results[0]['title'] ?? "N/A";
+    $topScore = normalizeScore($results[0]['predicted_score'] ?? 0);
 }
 
-/* ================= GET REAL BUDGET ================= */
+/* ================= BUDGET ================= */
 $stmt = $conn->prepare("
-    SELECT total_amount, used_amount, remaining_budget
+    SELECT total_amount, used_amount
     FROM budgets
     WHERE barangay_id = :bid
     ORDER BY year DESC
@@ -77,32 +64,147 @@ $budgetData = $stmt->fetch(PDO::FETCH_ASSOC);
 
 $annualBudget = $budgetData['total_amount'] ?? 0;
 $usedBudget = $budgetData['used_amount'] ?? 0;
-$remainingBudget = $budgetData['remaining_budget'] ?? ($annualBudget - $usedBudget);
+$remainingBudget = $annualBudget - $usedBudget;
 
-/* ================= AI CONCLUSION ================= */
-if($avgImpact >= 80){
-    $conclusion = "AI analysis shows this barangay is highly efficient in implementing youth-centered programs with strong projected municipal impact.";
-    $impact = "Municipal funding may be expanded for larger youth development initiatives.";
-}
-elseif($avgImpact >= 60){
-    $conclusion = "AI analysis shows moderate barangay performance with several successful activities requiring continuity and monitoring.";
-    $impact = "Maintain current budget while strengthening participation strategy.";
-}
-else{
-    $conclusion = "AI analysis shows low predicted impact. Existing activities require restructuring for stronger youth engagement.";
-    $impact = "Budget optimization and improved project planning are strongly advised.";
-}
-
-/* ================= SMART AI SUGGESTIONS ================= */
-$suggestions = [];
-$suggestions[] = "Prioritize replication of high-performing activity: ".$topActivity;
-$suggestions[] = "Increase youth attendance using digital survey and incentive campaigns.";
-$suggestions[] = "Allocate more resources to programs with high AI impact score.";
-$suggestions[] = "Reduce spending on low-engagement activity patterns.";
-$suggestions[] = "Strengthen council project generation to improve implementation confidence.";
-
-/* ================= BUDGET FORECAST ================= */
-$growthRate = $avgImpact / 100;
-$projectedIncrease = $remainingBudget * ($growthRate * 0.30);
+$growthRate = $topScore / 100;
+$projectedIncrease = $remainingBudget * ($growthRate * 0.25);
 $futureBudget = $remainingBudget + $projectedIncrease;
 ?>
+
+<!DOCTYPE html>
+<html>
+<head>
+<title>Chairperson ML Prediction</title>
+
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/sbstyle.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+body{
+    margin:0;
+    background:url('../assets/bg.jpg') no-repeat center center fixed;
+    background-size:cover;
+    overflow-x:hidden;
+}
+
+.main{
+    margin-left:190px;
+    padding:20px;
+    width:calc(100% - 200px);
+}
+
+.grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+    gap:15px;
+}
+
+.glass{
+    background:rgba(255,255,255,0.20);
+    backdrop-filter:blur(15px);
+    border-radius:15px;
+    padding:20px;
+    color:white;
+    margin-bottom:15px;
+}
+
+.card{text-align:center;}
+
+table{
+    width:100%;
+    border-collapse:collapse;
+}
+
+th{
+    background:#1e3c72;
+    color:white;
+    padding:10px;
+}
+
+td{
+    padding:8px;
+    text-align:center;
+}
+
+@media(max-width:768px){
+    .main{
+        margin-left:70px;
+        width:calc(100% - 80px);
+    }
+}
+</style>
+</head>
+
+<body>
+
+<?php include '../assets/sidebar.php'; ?>
+
+<div class="main">
+
+<h2>🤖 ML Dashboard</h2>
+
+<!-- KPI -->
+<div class="grid">
+
+<div class="glass card">
+<h3>Budget</h3>
+<h2>₱<?= number_format($annualBudget,2) ?></h2>
+</div>
+
+<div class="glass card">
+<h3>Used</h3>
+<h2>₱<?= number_format($usedBudget,2) ?></h2>
+</div>
+
+<div class="glass card">
+<h3>Remaining</h3>
+<h2>₱<?= number_format($remainingBudget,2) ?></h2>
+</div>
+
+<div class="glass card">
+<h3>Top Score</h3>
+<h2><?= $topScore ?>%</h2>
+</div>
+
+</div>
+
+<!-- TOP -->
+<div class="glass">
+<h3>Top Activity</h3>
+<p><?= htmlspecialchars($topActivity) ?></p>
+</div>
+
+<!-- TABLE -->
+<div class="glass">
+<h3>ML Results</h3>
+
+<?php if(!empty($results)) { ?>
+<table>
+<tr>
+<th>Activity</th>
+<th>Participants</th>
+<th>Budget</th>
+<th>Score</th>
+</tr>
+
+<?php foreach($results as $r){ ?>
+<tr>
+<td><?= htmlspecialchars($r['title']) ?></td>
+<td><?= $r['participants'] ?></td>
+<td>₱<?= number_format($r['budget'],2) ?></td>
+<td><?= normalizeScore($r['predicted_score']) ?>%</td>
+</tr>
+<?php } ?>
+
+</table>
+<?php } else { ?>
+<p>⚠ No ML data available. Run Flask API first: /predict</p>
+<?php } ?>
+
+</div>
+
+</div>
+
+</body>
+</html>

@@ -92,78 +92,42 @@ def home():
     return {"status": "Municipal Intelligence API Running"}
 
 # ================= PREDICT =================
-@app.route("/predict")
+@app.route("/predict", methods=["GET"])
 def predict():
-
     try:
-        model = load_model()
-
-        if model is None:
-            return jsonify({
-                "error": "model.pkl not found. Run train_model.py first."
-            }), 500
-
-        df = load_live_data()
+        df = load_data()
 
         if df.empty:
-            return jsonify({
-                "error": "No activity data available."
-            }), 400
+            return jsonify({"error": "No data found"}), 400
 
-        X = df[[
-            "participants",
-            "evaluation_score",
-            "allocated_budget",
-            "budget_ratio",
-            "cost_per_participant",
-            "implementation_strength",
-            "budget_utilization",
-            "project_count"
-        ]]
+        model = train_model(df)
 
-        # ================= PREDICTION =================
-        df["predicted_impact"] = model.predict(X)
-        df = df.sort_values(by="predicted_impact", ascending=False)
+        X = df[["participants", "budget", "efficiency", "quality"]]
+        df["score"] = model.predict(X)
 
-        avg_impact = round(float(df["predicted_impact"].mean()),2)
-        avg_budget_util = round(float(df["budget_utilization"].mean()),2)
+        results = []
 
-        # ================= CATEGORY =================
-        if avg_impact >= 80:
-            category = "High Performing Municipal Barangays"
-            funding_advice = "Eligible for increased development funding"
-        elif avg_impact >= 60:
-            category = "Moderately Performing Barangays"
-            funding_advice = "Maintain funding with strategic improvements"
-        else:
-            category = "Low Performing Barangays"
-            funding_advice = "Require intervention and budget optimization"
+        for i, row in df.iterrows():
+            results.append({
+                "title": f"Activity {i+1}",
+                "participants": int(row["participants"]),
+                "budget": float(row["budget"]),
+                "predicted_score": float(row["score"]),
+                "barangay_id": 1  # IMPORTANT FIX
+            })
 
-        # ================= TOP ACTIVITIES =================
-        top_activities = df.head(3)["title"].tolist()
-
-        # ================= AI RECOMMENDATION =================
-        if avg_budget_util >= 75:
-            recommendation = "Barangays are utilizing budget efficiently. Expand high-performing youth programs."
-        elif avg_budget_util >= 50:
-            recommendation = "Moderate utilization detected. Improve project monitoring and youth engagement."
-        else:
-            recommendation = "Low utilization detected. Reassess annual activity planning and budget distribution."
+        # 🔥 SAVE FILE FOR PHP
+        with open("../ml/ml_results.json", "w") as f:
+            json.dump(results, f, indent=4)
 
         return jsonify({
-            "performance_category": category,
-            "average_predicted_impact": avg_impact,
-            "average_budget_utilization": avg_budget_util,
-            "top_recommended_activities": top_activities,
-            "funding_advice": funding_advice,
-            "system_recommendation": recommendation,
-            "total_records_analyzed": len(df)
+            "status": "success",
+            "saved_records": len(results)
         })
 
     except Exception as e:
-        return jsonify({
-            "error": str(e)
-        }), 500
+        return jsonify({"error": str(e)}), 500
+        
 
 # ================= RUN =================
 if __name__ == "__main__":
