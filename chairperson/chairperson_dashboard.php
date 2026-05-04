@@ -12,7 +12,7 @@ $user_id = $_SESSION['user']['id'];
 
 /* ================= TOTAL PROPOSALS ================= */
 $stmt = $conn->prepare("
-    SELECT COUNT(*) 
+    SELECT COUNT(*)
     FROM projects
     WHERE barangay_id = :bid
     AND created_by = :uid
@@ -23,7 +23,7 @@ $totalProposals = $stmt->fetchColumn();
 
 /* ================= APPROVED ================= */
 $stmt = $conn->prepare("
-    SELECT COUNT(*) 
+    SELECT COUNT(*)
     FROM projects
     WHERE barangay_id = :bid
     AND created_by = :uid
@@ -34,7 +34,7 @@ $approved = $stmt->fetchColumn();
 
 /* ================= REJECTED ================= */
 $stmt = $conn->prepare("
-    SELECT COUNT(*) 
+    SELECT COUNT(*)
     FROM projects
     WHERE barangay_id = :bid
     AND created_by = :uid
@@ -45,6 +45,7 @@ $rejected = $stmt->fetchColumn();
 
 /* ================= PENDING ================= */
 $pending = $totalProposals - ($approved + $rejected);
+if($pending < 0){ $pending = 0; }
 
 /* ================= BUDGET INFO ================= */
 $stmt = $conn->prepare("
@@ -69,29 +70,14 @@ $stmt = $conn->prepare("
 $stmt->execute([':bid' => $barangay_id]);
 $totalUsedBudget = $stmt->fetchColumn();
 
-/* ================= ML API ================= */
-$ml_data = null;
-$url = "https://skmanagementsys.onrender.com/predict";
-
-$postData = [
-    "total_budget"       => (float)$totalAnnualBudget,
-    "used_budget"        => (float)$totalUsedBudget,
-    "remaining_budget"   => (float)$remainingBudget,
-    "approved_projects"  => (int)$approved,
-    "rejected_projects"  => (int)$rejected,
-    "pending_projects"   => (int)$pending,
-    "total_projects"     => (int)$totalProposals
-];
+/* ================= ML API CALL ================= */
+$url = "https://skfinal-system.onrender.com/predict";
 
 $ch = curl_init($url);
-
 curl_setopt_array($ch, [
     CURLOPT_RETURNTRANSFER => true,
-    CURLOPT_POST => true,
-    CURLOPT_HTTPHEADER => ["Content-Type: application/json"],
-    CURLOPT_POSTFIELDS => json_encode($postData),
-    CURLOPT_TIMEOUT => 60,
-    CURLOPT_CONNECTTIMEOUT => 20,
+    CURLOPT_TIMEOUT => 20,
+    CURLOPT_CONNECTTIMEOUT => 10,
     CURLOPT_SSL_VERIFYPEER => false,
     CURLOPT_FOLLOWLOCATION => true
 ]);
@@ -101,10 +87,39 @@ $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 $curl_error = curl_error($ch);
 curl_close($ch);
 
+/* ================= SAFE AI DEFAULTS ================= */
+$ml_online = false;
+$mean_score = 0;
+$category = "No Data";
+$success_probability = 0;
+$budget_efficiency = 0;
+$recommendation = "No recommendation available";
+
+/* ================= PARSE AI ================= */
 if ($response && $http_code == 200) {
     $decoded = json_decode($response, true);
+
     if (json_last_error() === JSON_ERROR_NONE) {
-        $ml_data = $decoded;
+        $mean_score = floatval($decoded['mean_score'] ?? 0);
+        $budget_efficiency = round($mean_score,2);
+
+        if ($mean_score >= 70) {
+            $category = "High Performance";
+            $success_probability = 0.85;
+            $recommendation = "Barangay operations are performing strongly. Maintain and expand approved youth programs.";
+        }
+        elseif ($mean_score >= 40) {
+            $category = "Moderate Performance";
+            $success_probability = 0.60;
+            $recommendation = "Barangay has stable project execution. Improve proposal quality and participation rate.";
+        }
+        elseif ($mean_score > 0) {
+            $category = "Low Performance";
+            $success_probability = 0.30;
+            $recommendation = "Barangay needs stronger planning, approval management, and budget optimization.";
+        }
+
+        $ml_online = true;
     }
 }
 
@@ -150,7 +165,7 @@ body{
 .main{
     margin-left:190px;
     padding:20px;
-    width:calc(100% - 200px);
+    width:calc(100% - 210px);
 }
 
 h2{
@@ -182,30 +197,23 @@ h2{
     width:220px;
 }
 
-.card{
-    background:rgba(255,255,255,0.15);
+.card,.ml-box,.chart-box{
+    background:rgba(255,255,255,0.18);
     backdrop-filter:blur(18px);
     border-radius:15px;
     padding:20px;
-    color:#fff;
+    color:white;
     text-align:center;
-    box-shadow:0 8px 25px rgba(0,0,0,0.2);
+    box-shadow:0 8px 25px rgba(0,0,0,0.25);
     margin-bottom:20px;
 }
 
-.card h3{margin:0;}
-.card h2{margin-top:10px;color:#1e3c72;}
-.chart-box h3{color: #fff;}
-.ml-box h3{color: #fff;}
+.card h2{
+    color:#1e3c72;
+}
 
 .ml-box,.chart-box{
-    background:rgba(255,255,255,0.15);
-    backdrop-filter:blur(18px);
-    border-radius:15px;
-    padding:20px;
-    color:#1e3c72;
-    box-shadow:0 8px 25px rgba(0,0,0,0.2);
-    margin-bottom:20px;
+    text-align:left;
 }
 
 @media(max-width:768px){
@@ -217,10 +225,6 @@ h2{
 
     .row{
         flex-direction:column;
-    }
-
-    .row.bottom{
-        align-items:center;
     }
 
     .row.bottom .card{
@@ -240,7 +244,6 @@ h2{
 
 <div class="grid">
 
-    <!-- TOP 4 -->
     <div class="row top">
         <div class="card"><h3>Total Proposals</h3><h2><?= $totalProposals ?></h2></div>
         <div class="card"><h3>Approved</h3><h2><?= $approved ?></h2></div>
@@ -248,7 +251,6 @@ h2{
         <div class="card"><h3>Pending</h3><h2><?= $pending ?></h2></div>
     </div>
 
-    <!-- BOTTOM 3 CENTERED -->
     <div class="row bottom">
         <div class="card"><h3>Total Budget</h3><h2>₱<?= number_format($totalAnnualBudget,2) ?></h2></div>
         <div class="card"><h3>Used Budget</h3><h2>₱<?= number_format($totalUsedBudget,2) ?></h2></div>
@@ -260,14 +262,14 @@ h2{
 <div class="ml-box">
     <h3>🤖 AI / ML Analysis</h3>
 
-    <?php if ($ml_data && is_array($ml_data) && !isset($ml_data['error'])): ?>
-        <p><b>Category:</b> <?= $ml_data['category'] ?? 'N/A' ?></p>
-        <p><b>Success Probability:</b> <?= isset($ml_data['success_probability']) ? round($ml_data['success_probability']*100,2).'%' : 'N/A' ?></p>
-        <p><b>Budget Efficiency:</b> <?= $ml_data['budget_efficiency_score'] ?? 'N/A' ?>%</p>
-        <p><b>Recommendation:</b> <?= $ml_data['recommendation'] ?? 'No recommendation available' ?></p>
+    <?php if ($ml_online): ?>
+        <p><b>Category:</b> <?= htmlspecialchars($category) ?></p>
+        <p><b>Success Probability:</b> <?= round($success_probability * 100,2) ?>%</p>
+        <p><b>Budget Efficiency:</b> <?= $budget_efficiency ?>%</p>
+        <p><b>Recommendation:</b> <?= htmlspecialchars($recommendation) ?></p>
     <?php else: ?>
-        <p style="color:red;">🤖 AI service unavailable or Render API not responding.</p>
-        <p><small>HTTP CODE: <?= $http_code ?><br>CURL ERROR: <?= $curl_error ?></small></p>
+        <p style="color:#ffcccc;">AI service unavailable.</p>
+        <small>HTTP CODE: <?= $http_code ?> | CURL ERROR: <?= $curl_error ?></small>
     <?php endif; ?>
 </div>
 
@@ -290,6 +292,9 @@ new Chart(document.getElementById('chart'), {
             tension:0.3,
             fill:false
         }]
+    },
+    options:{
+        responsive:true
     }
 });
 </script>
