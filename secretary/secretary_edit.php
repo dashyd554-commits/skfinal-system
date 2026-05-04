@@ -52,13 +52,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <link rel="stylesheet" href="../assets/style.css">
 
 <style>
-body{background:#f4f6f9;}
+body{
+    margin:0;
+    background:url('../assets/bg.jpg') no-repeat center center fixed;
+    background-size:cover;
+    font-family:Arial;
+}
 .form{
-    max-width:400px;
-    margin:50px auto;
-    background:white;
+    background:rgba(255,255,255,0.15);
+    backdrop-filter:blur(18px);
+    border-radius:15px;
     padding:20px;
-    border-radius:10px;
+    color:white;
+    box-shadow:0 8px 25px rgba(0,0,0,0.2);
+    margin-bottom:20px;
 }
 input,select{
     width:100%;
