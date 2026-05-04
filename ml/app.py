@@ -53,7 +53,7 @@ def train_model(df):
     return model
 
 # ================= HEALTH CHECK =================
-@app.route("/", methods=["GET"])
+@app.route("/", methods=["POST"])
 def home():
     return jsonify({"status": "ML API running"})
 
