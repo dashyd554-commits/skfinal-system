@@ -1,20 +1,18 @@
-from flask import Flask, request, jsonify
-from flask_cors import CORS
+from flask import Flask, jsonify
 import pandas as pd
 import psycopg2
 import os
 from sklearn.ensemble import RandomForestRegressor
 
 app = Flask(__name__)
-CORS(app)
 
-# ================= DB =================
+# ================= DB CONNECTION =================
 def get_connection():
     return psycopg2.connect(
-        host=os.getenv("DB_HOST", "dpg-d7ocp6a8qa3s73ahfb4g-a.ohio-postgres.render.com"),
-        database=os.getenv("DB_NAME", "sk_system"),
-        user=os.getenv("DB_USER", "sk_new"),
-        password=os.getenv("DB_PASSWORD", "bX9G8vuFr3DTrHIASqTOsK9qCZ6A4lfZ"),
+        host=os.getenv("DB_HOST"),
+        database=os.getenv("DB_NAME"),
+        user=os.getenv("DB_USER"),
+        password=os.getenv("DB_PASSWORD"),
         port=os.getenv("DB_PORT", "5432")
     )
 
@@ -28,10 +26,11 @@ def load_data():
         COALESCE(allocated_budget,1) AS budget,
         COALESCE(evaluation_score,0) AS evaluation_score
     FROM activities
+    WHERE allocated_budget IS NOT NULL
     LIMIT 500
     """
 
-    df = pd.read_sql(query, conn)
+    df = pd.read_sql_query(query, conn)
     conn.close()
 
     df["participants"] = pd.to_numeric(df["participants"], errors="coerce").fillna(0)
@@ -43,7 +42,7 @@ def load_data():
 
     return df
 
-# ================= TRAIN =================
+# ================= TRAIN MODEL =================
 def train_model(df):
     X = df[["participants", "budget", "efficiency", "quality"]]
     y = (df["efficiency"] * 50) + (df["quality"] * 50)
@@ -52,59 +51,32 @@ def train_model(df):
     model.fit(X, y)
     return model
 
-# ================= HEALTH (FIXED) =================
-@app.route("/", methods=["GET"])
+# ================= ROOT TEST =================
+@app.route("/")
 def home():
-    return jsonify({"status": "ML API running"}), 200
+    return jsonify({
+        "status": "running",
+        "message": "Flask API is working"
+    })
 
-# ================= PREDICT (ONLY POST) =================
-@app.route("/predict", methods=["POST"])
+# ================= PREDICT API =================
+@app.route("/predict")
 def predict():
     try:
-        data = request.get_json(silent=True)
-
-        if not data:
-            return jsonify({
-                "status": "error",
-                "message": "No JSON payload received"
-            }), 400
-
         df = load_data()
 
         if df.empty:
-            return jsonify({
-                "status": "error",
-                "message": "No data available"
-            }), 400
+            return jsonify({"error": "No data"}), 400
 
         model = train_model(df)
-
         X = df[["participants", "budget", "efficiency", "quality"]]
+
         df["score"] = model.predict(X)
 
-        mean_score = float(df["score"].mean())
-
-        if mean_score >= 70:
-            category = "High Performance"
-            prob = 0.85
-            rec = "Maintain strong programs"
-        elif mean_score >= 40:
-            category = "Moderate Performance"
-            prob = 0.60
-            rec = "Improve proposal quality"
-        else:
-            category = "Low Performance"
-            prob = 0.30
-            rec = "Improve execution"
-
         return jsonify({
-            "status": "success",
-            "mean_score": round(mean_score, 2),
-            "category": category,
-            "success_probability": prob,
-            "budget_efficiency_score": round(mean_score, 2),
-            "recommendation": rec
-        }), 200
+            "status": "ok",
+            "mean_score": float(df["score"].mean())
+        })
 
     except Exception as e:
         return jsonify({
@@ -113,7 +85,7 @@ def predict():
         }), 500
 
 
-# ================= RUN =================
+# ================= RUN (RENDER FIX) =================
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
