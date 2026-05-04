@@ -43,3 +43,4 @@
     <a href="../auth/logout.php" class="logout">🚪 <span>Logout</span></a>
 
 </div>
+
