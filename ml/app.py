@@ -43,7 +43,7 @@ def load_data():
 
     return df
 
-# ================= TRAIN =================
+# ================= TRAIN MODEL =================
 def train_model(df):
     X = df[["participants", "budget", "efficiency", "quality"]]
     y = (df["efficiency"] * 50) + (df["quality"] * 50)
@@ -52,20 +52,34 @@ def train_model(df):
     model.fit(X, y)
     return model
 
-# ================= HEALTH =================
+# ================= HEALTH CHECK =================
 @app.route("/", methods=["GET"])
 def home():
     return jsonify({"status": "ML API running"})
 
-# ================= PREDICT (FIXED) =================
-@app.route("/predict", methods=["GET"])
+# ================= FIXED PREDICT (POST ONLY) =================
+@app.route("/predict", methods=["POST"])
 def predict():
     try:
+        # ================= GET JSON =================
+        data = request.get_json(silent=True)
+
+        if not data:
+            return jsonify({
+                "status": "error",
+                "message": "No JSON payload received"
+            }), 400
+
+        # ================= LOAD DATA =================
         df = load_data()
 
         if df.empty:
-            return jsonify({"error": "No data"}), 400
+            return jsonify({
+                "status": "error",
+                "message": "No data available from database"
+            }), 400
 
+        # ================= TRAIN =================
         model = train_model(df)
 
         X = df[["participants", "budget", "efficiency", "quality"]]
@@ -73,32 +87,42 @@ def predict():
 
         mean_score = float(df["score"].mean())
 
-        # classification
+        # ================= AI LOGIC =================
         if mean_score >= 70:
             category = "High Performance"
             prob = 0.85
-            rec = "Maintain strong programs"
+            rec = "Maintain strong programs and expand initiatives"
         elif mean_score >= 40:
             category = "Moderate Performance"
             prob = 0.60
-            rec = "Improve proposal quality and participation"
-        else:
+            rec = "Improve proposal quality and participation rate"
+        elif mean_score > 0:
             category = "Low Performance"
             prob = 0.30
-            rec = "Improve execution and budgeting"
+            rec = "Improve execution, planning, and budgeting"
+        else:
+            category = "No Data"
+            prob = 0
+            rec = "Insufficient data for prediction"
 
+        # ================= RESPONSE =================
         return jsonify({
-            "mean_score": mean_score,
+            "status": "success",
+            "mean_score": round(mean_score, 2),
             "category": category,
             "success_probability": prob,
             "budget_efficiency_score": round(mean_score, 2),
             "recommendation": rec
-        })
+        }), 200
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
 
 
+# ================= RUN =================
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
