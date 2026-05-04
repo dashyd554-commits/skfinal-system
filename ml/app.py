@@ -16,97 +16,76 @@ def get_connection():
         port=os.getenv("DB_PORT", "5432")
     )
 
-# ================= LOAD DATA (SAFE) =================
+# ================= LOAD DATA =================
 def load_data():
-    try:
-        conn = get_connection()
+    conn = get_connection()
 
-        query = """
-        SELECT 
-            COALESCE(participants,0) AS participants,
-            COALESCE(allocated_budget,1) AS budget,
-            COALESCE(evaluation_score,0) AS evaluation_score
-        FROM activities
-        LIMIT 200
-        """
+    query = """
+    SELECT 
+        COALESCE(participants,0) AS participants,
+        COALESCE(allocated_budget,1) AS budget,
+        COALESCE(evaluation_score,0) AS evaluation_score
+    FROM activities
+    WHERE allocated_budget IS NOT NULL
+    LIMIT 500
+    """
 
-        df = pd.read_sql_query(query, conn)
-        conn.close()
+    df = pd.read_sql_query(query, conn)
+    conn.close()
 
-        if df.empty:
-            return pd.DataFrame()
+    df["participants"] = pd.to_numeric(df["participants"], errors="coerce").fillna(0)
+    df["budget"] = pd.to_numeric(df["budget"], errors="coerce").fillna(1)
+    df["evaluation_score"] = pd.to_numeric(df["evaluation_score"], errors="coerce").fillna(0)
 
-        # CLEAN DATA
-        df["participants"] = pd.to_numeric(df["participants"], errors="coerce").fillna(0)
-        df["budget"] = pd.to_numeric(df["budget"], errors="coerce").fillna(1)
-        df["evaluation_score"] = pd.to_numeric(df["evaluation_score"], errors="coerce").fillna(0)
+    df["efficiency"] = df["participants"] / (df["budget"] + 1)
+    df["quality"] = df["evaluation_score"] / 100
 
-        # PREVENT DIVIDE BY ZERO
-        df["budget"] = df["budget"].apply(lambda x: max(x, 1))
-
-        # FEATURES
-        df["efficiency"] = df["participants"] / df["budget"]
-        df["quality"] = df["evaluation_score"] / 100
-
-        return df
-
-    except Exception as e:
-        print("DB ERROR:", e)
-        return pd.DataFrame()
+    return df
 
 # ================= TRAIN MODEL =================
 def train_model(df):
     X = df[["participants", "budget", "efficiency", "quality"]]
+    y = (df["efficiency"] * 50) + (df["quality"] * 50)
 
-    # STABLE TARGET (NO EXPLODING VALUES)
-    y = (
-        df["efficiency"] * 50 +
-        df["quality"] * 50
-    )
-
-    model = RandomForestRegressor(
-        n_estimators=120,
-        max_depth=10,
-        random_state=42
-    )
-
+    model = RandomForestRegressor(n_estimators=100, random_state=42)
     model.fit(X, y)
     return model
 
-# ================= ROOT =================
+# ================= ROOT TEST =================
 @app.route("/")
 def home():
     return jsonify({
-        "status": "ML API running",
-        "endpoints": ["/predict"]
+        "status": "running",
+        "message": "Flask API is working"
     })
 
-# ================= PREDICT =================
+# ================= PREDICT API =================
 @app.route("/predict")
 def predict():
-    df = load_data()
+    try:
+        df = load_data()
 
-    if df.empty:
+        if df.empty:
+            return jsonify({"error": "No data"}), 400
+
+        model = train_model(df)
+        X = df[["participants", "budget", "efficiency", "quality"]]
+
+        df["score"] = model.predict(X)
+
         return jsonify({
-            "error": "No data found in activities table",
-            "mean_score": 0,
-            "status": "empty_dataset"
-        }), 200
+            "status": "ok",
+            "mean_score": float(df["score"].mean())
+        })
 
-    model = train_model(df)
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
 
-    X = df[["participants", "budget", "efficiency", "quality"]]
-    df["score"] = model.predict(X)
 
-    mean_score = float(df["score"].mean())
-
-    return jsonify({
-        "status": "ok",
-        "mean_score": round(mean_score, 2),
-        "rows": len(df)
-    })
-
-# ================= RUN =================
+# ================= RUN (RENDER FIX) =================
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)

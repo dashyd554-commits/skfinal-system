@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: skfinal-php
-    env: php
-    buildCommand: ""
-    startCommand: ""
+    name: skfinal-api
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python app.py
