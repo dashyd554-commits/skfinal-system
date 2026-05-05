@@ -1,0 +1,100 @@
+{
+    "1": {
+        "mean_score": 33.16,
+        "category": "Low Performance",
+        "success_probability": 0.3,
+        "budget_efficiency_score": 33.16,
+        "recommendation": "Needs stronger planning, approval management, and budget utilization."
+    },
+    "2": {
+        "mean_score": 20.0,
+        "category": "Low Performance",
+        "success_probability": 0.3,
+        "budget_efficiency_score": 20.0,
+        "recommendation": "Needs stronger planning, approval management, and budget utilization."
+    },
+    "3": {
+        "mean_score": 57.97,
+        "category": "Moderate Performance",
+        "success_probability": 0.6,
+        "budget_efficiency_score": 57.97,
+        "recommendation": "Stable performance. Improve proposal quality, participation, and monitoring."
+    },
+    "4": {
+        "mean_score": 20.0,
+        "category": "Low Performance",
+        "success_probability": 0.3,
+        "budget_efficiency_score": 20.0,
+        "recommendation": "Needs stronger planning, approval management, and budget utilization."
+    },
+    "5": {
+        "mean_score": 28.98,
+        "category": "Low Performance",
+        "success_probability": 0.3,
+        "budget_efficiency_score": 28.98,
+        "recommendation": "Needs stronger planning, approval management, and budget utilization."
+    },
+    "6": {
+        "mean_score": 45.85,
+        "category": "Moderate Performance",
+        "success_probability": 0.6,
+        "budget_efficiency_score": 45.85,
+        "recommendation": "Stable performance. Improve proposal quality, participation, and monitoring."
+    },
+    "7": {
+        "mean_score": 20.0,
+        "category": "Low Performance",
+        "success_probability": 0.3,
+        "budget_efficiency_score": 20.0,
+        "recommendation": "Needs stronger planning, approval management, and budget utilization."
+    },
+    "8": {
+        "mean_score": 20.0,
+        "category": "Low Performance",
+        "success_probability": 0.3,
+        "budget_efficiency_score": 20.0,
+        "recommendation": "Needs stronger planning, approval management, and budget utilization."
+    },
+    "9": {
+        "mean_score": 20.0,
+        "category": "Low Performance",
+        "success_probability": 0.3,
+        "budget_efficiency_score": 20.0,
+        "recommendation": "Needs stronger planning, approval management, and budget utilization."
+    },
+    "10": {
+        "mean_score": 20.0,
+        "category": "Low Performance",
+        "success_probability": 0.3,
+        "budget_efficiency_score": 20.0,
+        "recommendation": "Needs stronger planning, approval management, and budget utilization."
+    },
+    "11": {
+        "mean_score": 30.95,
+        "category": "Low Performance",
+        "success_probability": 0.3,
+        "budget_efficiency_score": 30.95,
+        "recommendation": "Needs stronger planning, approval management, and budget utilization."
+    },
+    "12": {
+        "mean_score": 20.0,
+        "category": "Low Performance",
+        "success_probability": 0.3,
+        "budget_efficiency_score": 20.0,
+        "recommendation": "Needs stronger planning, approval management, and budget utilization."
+    },
+    "13": {
+        "mean_score": 20.0,
+        "category": "Low Performance",
+        "success_probability": 0.3,
+        "budget_efficiency_score": 20.0,
+        "recommendation": "Needs stronger planning, approval management, and budget utilization."
+    },
+    "14": {
+        "mean_score": 20.0,
+        "category": "Low Performance",
+        "success_probability": 0.3,
+        "budget_efficiency_score": 20.0,
+        "recommendation": "Needs stronger planning, approval management, and budget utilization."
+    }
+}
