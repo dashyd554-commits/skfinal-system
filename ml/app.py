@@ -9,10 +9,10 @@ app = Flask(__name__)
 # ================= DB CONNECTION =================
 def get_connection():
     return psycopg2.connect(
-        host=os.getenv("DB_HOST", "dpg-d7ocp6a8qa3s73ahfb4g-a.ohio-postgres.render.com"),
-        database=os.getenv("DB_NAME", "sk_system"),
-        user=os.getenv("DB_USER", "sk_new"),
-        password=os.getenv("DB_PASSWORD", "bX9G8vuFr3DTrHIASqTOsK9qCZ6A4lfZ"),
+        host=os.getenv("DB_HOST"),
+        database=os.getenv("DB_NAME"),
+        user=os.getenv("DB_USER"),
+        password=os.getenv("DB_PASSWORD"),
         port=os.getenv("DB_PORT", "5432")
     )
 
@@ -52,55 +52,30 @@ def train_model(df):
     return model
 
 # ================= ROOT TEST =================
-@app.route("/predict", methods=["GET", "POST"])
+@app.route("/")
+def home():
+    return jsonify({
+        "status": "running",
+        "message": "Flask API is working"
+    })
+
+# ================= PREDICT API =================
+@app.route("/predict")
 def predict():
     try:
-        # Allow GET fallback (prevents 405 completely)
-        if request.method == "POST":
-            data = request.get_json(silent=True)
-        else:
-            data = request.args.to_dict()
-
-        # Prevent crash if empty request
-        if not data:
-            data = {"safe": True}
-
         df = load_data()
 
         if df.empty:
-            return jsonify({
-                "status": "error",
-                "message": "No data available"
-            }), 400
+            return jsonify({"error": "No data"}), 400
 
         model = train_model(df)
-
         X = df[["participants", "budget", "efficiency", "quality"]]
+
         df["score"] = model.predict(X)
 
-        mean_score = float(df["score"].mean())
-
-        # SIMPLE ROBUST ML LOGIC
-        if mean_score >= 70:
-            category = "High Performance"
-            prob = 0.85
-            rec = "Maintain strong programs"
-        elif mean_score >= 40:
-            category = "Moderate Performance"
-            prob = 0.60
-            rec = "Improve proposal quality"
-        else:
-            category = "Low Performance"
-            prob = 0.30
-            rec = "Improve execution"
-
         return jsonify({
-            "status": "success",
-            "mean_score": round(mean_score, 2),
-            "category": category,
-            "success_probability": prob,
-            "budget_efficiency_score": round(mean_score, 2),
-            "recommendation": rec
+            "status": "ok",
+            "mean_score": float(df["score"].mean())
         })
 
     except Exception as e:
@@ -108,6 +83,8 @@ def predict():
             "status": "error",
             "message": str(e)
         }), 500
+
+
 # ================= RUN (RENDER FIX) =================
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
