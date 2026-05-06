@@ -9,76 +9,59 @@ if (!isset($_SESSION['user']) || $_SESSION['user']['role'] != 'secretary') {
 
 $barangay_id = $_SESSION['user']['barangay_id'];
 
-/* ================= TOTAL PENDING PROPOSALS ONLY ================= */
+/* ================= DATA ================= */
 $stmt = $conn->prepare("
     SELECT COUNT(*) 
     FROM projects
     WHERE barangay_id = :barangay_id
     AND status = 'pending_secretary'
 ");
-$stmt->execute([
-    ':barangay_id' => $barangay_id
-]);
+$stmt->execute([':barangay_id' => $barangay_id]);
 $totalProposals = $stmt->fetchColumn() ?: 0;
 
-/* ================= APPROVED BY COUNCIL ================= */
 $stmt = $conn->prepare("
     SELECT COUNT(*) 
     FROM projects
     WHERE barangay_id = :barangay_id
     AND status IN ('pending_treasurer','approved')
 ");
-$stmt->execute([
-    ':barangay_id' => $barangay_id
-]);
+$stmt->execute([':barangay_id' => $barangay_id]);
 $totalApprovedCouncil = $stmt->fetchColumn() ?: 0;
 
-/* ================= REJECTED BY COUNCIL ================= */
 $stmt = $conn->prepare("
     SELECT COUNT(*) 
     FROM projects
     WHERE barangay_id = :barangay_id
     AND status = 'rejected'
 ");
-$stmt->execute([
-    ':barangay_id' => $barangay_id
-]);
+$stmt->execute([':barangay_id' => $barangay_id]);
 $totalRejectedCouncil = $stmt->fetchColumn() ?: 0;
 
-/* ================= SAFE DATA LOAD ================= */
-try {
-    $stmt = $conn->prepare("
-        SELECT title, participants 
-        FROM activities 
-        WHERE barangay_id = :barangay_id
-    ");
-    $stmt->execute([
-        ':barangay_id' => $barangay_id
-    ]);
-    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-} catch (Exception $e) {
-    $rows = [];
-}
+/* ================= ACTIVITY ================= */
+$stmt = $conn->prepare("
+    SELECT title, participants 
+    FROM activities 
+    WHERE barangay_id = :barangay_id
+");
+$stmt->execute([':barangay_id' => $barangay_id]);
+$rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-/* ================= INIT ================= */
 $labels = [];
 $data = [];
 $total = 0;
 $mlResults = [];
 
-/* ================= PROCESS DATA ================= */
 if (!empty($rows)) {
 
     foreach ($rows as $row) {
         $participants = (int)($row['participants'] ?? 0);
 
-        $labels[] = $row['title'] ?? 'Unknown';
+        $labels[] = $row['title'];
         $data[] = $participants;
         $total += $participants;
     }
 
     foreach ($rows as $row) {
-
         $participants = (int)($row['participants'] ?? 0);
 
         $score = ($total > 0)
@@ -86,38 +69,37 @@ if (!empty($rows)) {
             : 0;
 
         $mlResults[] = [
-            'title' => $row['title'] ?? 'Unknown',
+            'title' => $row['title'],
             'participants' => $participants,
             'score' => round($score, 2)
         ];
     }
 
-    usort($mlResults, function($a, $b) {
-        return $b['score'] <=> $a['score'];
-    });
+    usort($mlResults, fn($a,$b) => $b['score'] <=> $a['score']);
 
-    $topActivity = $mlResults[0]['title'] ?? 'No Data';
-    $topScore = $mlResults[0]['score'] ?? 0;
+    $topActivity = $mlResults[0]['title'];
+    $topScore = $mlResults[0]['score'];
 
 } else {
     $topActivity = "No Data";
     $topScore = 0;
 }
 
-/* ================= INSIGHT ================= */
-if ($total >= 200) {
-    $mlInsight = "High engagement detected. Strong community participation.";
-    $recommendation = "Maintain and expand successful activities.";
-} elseif ($total >= 100) {
-    $mlInsight = "Moderate engagement detected.";
-    $recommendation = "Improve promotion and replicate successful programs.";
-} elseif ($total > 0) {
-    $mlInsight = "Low engagement detected.";
-    $recommendation = "Increase outreach and improve event design.";
-} else {
-    $mlInsight = "No activity data available.";
-    $recommendation = "Start recording activities to generate insights.";
-}
+$mlInsight = $total >= 200
+    ? "High engagement detected. Strong community participation."
+    : ($total >= 100
+        ? "Moderate engagement detected."
+        : ($total > 0
+            ? "Low engagement detected."
+            : "No activity data available."));
+
+$recommendation = $total >= 200
+    ? "Maintain and expand successful activities."
+    : ($total >= 100
+        ? "Improve promotion and replicate successful programs."
+        : ($total > 0
+            ? "Increase outreach and improve event design."
+            : "Start recording activities to generate insights."));
 ?>
 
 <!DOCTYPE html>
@@ -125,108 +107,115 @@ if ($total >= 200) {
 <head>
 <title>Secretary Dashboard</title>
 
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
 <link rel="stylesheet" href="../assets/style.css">
-<link rel="stylesheet" href="../assets/sbstyle.css">
 
 <style>
 *{box-sizing:border-box;}
 
 body{
     margin:0;
+    font-family:Arial;
     background:url('../assets/bg.jpg') no-repeat center center fixed;
     background-size:cover;
-    font-family:Arial;
+
+    height:100vh;
+    overflow:hidden;
 }
 
+/* ===== WRAPPER FIX ===== */
+.wrapper{
+    display:flex;
+    height:100vh;
+    overflow:hidden;
+}
+
+/* ===== MAIN FIX ===== */
 .main{
-    margin-left:190px;
-    padding:20px;
-    width:calc(100% - 200px);
+    flex:1;
+    height:100vh;
+    overflow-y:auto;
+    padding:15px;
 }
 
+/* TITLE */
 .header h2{
     color:white;
     text-align:center;
-    margin-bottom:20px;
+    margin:10px 0;
 }
 
+/* GRID (compact) */
 .grid{
     display:grid;
     grid-template-columns:repeat(5,1fr);
-    gap:15px;
-    margin-bottom:20px;
+    gap:10px;
 }
 
+/* CARDS */
 .glass{
     background:rgba(255,255,255,0.15);
     backdrop-filter:blur(18px);
-    border-radius:15px;
-    padding:20px;
+    border-radius:12px;
+    padding:12px;
     color:white;
-    box-shadow:0 8px 25px rgba(0,0,0,0.2);
-    margin-bottom:20px;
+    box-shadow:0 8px 20px rgba(0,0,0,0.2);
 }
 
+/* CARD TEXT */
 .card{text-align:center;}
+.card h2{color:#1e3c72; margin:5px 0;}
 
-.card h2{
-    color:#1e3c72;
-    margin-top:10px;
+/* CHART FIX (IMPORTANT) */
+.chart-box{
+    height:300px;
 }
 
+/* TABLE */
 table{
     width:100%;
     border-collapse:collapse;
-    margin-top:10px;
 }
 
 th{
     background:#1e3c72;
     color:white;
-    padding:12px;
+    padding:8px;
 }
 
 td{
-    padding:10px;
+    padding:8px;
     text-align:center;
+    color:#1e3c72;
     border-bottom:1px solid rgba(255,255,255,0.2);
-    color:#1e3c72;
 }
 
-p{
-    color:#1e3c72;
-    line-height:1.8;
-}
-
-.highlight{
-    font-weight:bold;
-    font-size:18px;
-}
-
-canvas{
-    background:rgba(255,255,255,0.08);
-    border-radius:10px;
-    padding:10px;
-}
-
+/* RESPONSIVE */
 @media(max-width:768px){
+    body{overflow:auto;}
+
+    .wrapper{
+        flex-direction:column;
+    }
+
     .main{
-        margin-left:0;
-        width:100%;
-        padding:10px;
+        height:auto;
     }
 
     .grid{
         grid-template-columns:1fr;
+    }
+
+    .chart-box{
+        height:250px;
     }
 }
 </style>
 </head>
 
 <body>
+
+<div class="wrapper">
 
 <?php include '../assets/sidebar.php'; ?>
 
@@ -238,98 +227,65 @@ canvas{
 
 <div class="grid">
 
-    <div class="glass card">
-        <h3>👥 Total Participants</h3>
-        <h2><?= $total ?></h2>
-    </div>
-
-    <div class="glass card">
-        <h3>📊 Activities Count</h3>
-        <h2><?= count($labels) ?></h2>
-    </div>
-
-    <div class="glass card">
-        <h3>📄 Pending Proposals</h3>
-        <h2><?= $totalProposals ?></h2>
-    </div>
-
-    <div class="glass card">
-        <h3>✅ Approved by Council</h3>
-        <h2><?= $totalApprovedCouncil ?></h2>
-    </div>
-
-    <div class="glass card">
-        <h3>❌ Rejected by Council</h3>
-        <h2><?= $totalRejectedCouncil ?></h2>
-    </div>
+    <div class="glass card"><h3>Participants</h3><h2><?= $total ?></h2></div>
+    <div class="glass card"><h3>Activities</h3><h2><?= count($labels) ?></h2></div>
+    <div class="glass card"><h3>Pending</h3><h2><?= $totalProposals ?></h2></div>
+    <div class="glass card"><h3>Approved</h3><h2><?= $totalApprovedCouncil ?></h2></div>
+    <div class="glass card"><h3>Rejected</h3><h2><?= $totalRejectedCouncil ?></h2></div>
 
 </div>
 
-<div class="glass">
-    <h3>📊 Participation per Activity</h3>
+<div class="glass chart-box">
+    <h3>📊 Participation Chart</h3>
     <canvas id="chart"></canvas>
 </div>
 
 <div class="glass">
-    <h3>🤖 ML Activity Ranking</h3>
+    <h3>🤖 ML Ranking</h3>
     <table>
+        <tr><th>Activity</th><th>Participants</th><th>Score</th></tr>
+        <?php foreach($mlResults as $r){ ?>
         <tr>
-            <th>Activity</th>
-            <th>Participants</th>
-            <th>ML Score</th>
+            <td><?= htmlspecialchars($r['title']) ?></td>
+            <td><?= $r['participants'] ?></td>
+            <td><?= $r['score'] ?>%</td>
         </tr>
-
-        <?php if (!empty($mlResults)) { ?>
-            <?php foreach ($mlResults as $r) { ?>
-            <tr>
-                <td><?= htmlspecialchars($r['title']) ?></td>
-                <td><?= (int)$r['participants'] ?></td>
-                <td><?= $r['score'] ?>%</td>
-            </tr>
-            <?php } ?>
-        <?php } else { ?>
-            <tr><td colspan="3">No activity data found</td></tr>
         <?php } ?>
     </table>
 </div>
 
 <div class="glass">
-    <h3>📢 AI Insight</h3>
-    <p><?= htmlspecialchars($mlInsight) ?></p>
+    <h3>📢 Insight</h3>
+    <p><?= $mlInsight ?></p>
 </div>
 
 <div class="glass">
     <h3>💡 Recommendation</h3>
-    <p class="highlight"><?= htmlspecialchars($recommendation) ?></p>
+    <p><b><?= $recommendation ?></b></p>
 </div>
 
 <div class="glass">
-    <h3>🏆 Top Activity (ML)</h3>
-    <p class="highlight"><?= htmlspecialchars($topActivity) ?> (<?= $topScore ?>%)</p>
+    <h3>🏆 Top Activity</h3>
+    <p><b><?= $topActivity ?> (<?= $topScore ?>%)</b></p>
 </div>
 
+</div>
 </div>
 
 <script>
 new Chart(document.getElementById('chart'), {
-    type: 'bar',
-    data: {
+    type:'bar',
+    data:{
         labels: <?= json_encode($labels) ?>,
-        datasets: [{
-            label: 'Participants',
+        datasets:[{
+            label:'Participants',
             data: <?= json_encode($data) ?>,
-            borderWidth: 1
+            borderWidth:1
         }]
     },
-    options: {
+    options:{
         responsive:true,
-        plugins:{
-            legend:{ labels:{ color:'white' } }
-        },
-        scales:{
-            x:{ ticks:{ color:'white' } },
-            y:{ ticks:{ color:'white' } }
-        }
+        maintainAspectRatio:false
     }
 });
 </script>

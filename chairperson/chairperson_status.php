@@ -42,7 +42,6 @@ $projects = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 /* ================= STATUS LABEL ================= */
 function statusLabel($status) {
-
     switch ($status) {
         case 'pending_secretary':
             return "<span style='color:orange;font-weight:bold;'>Pending Secretary Voting</span>";
@@ -67,21 +66,51 @@ function statusLabel($status) {
 <head>
 <title>Project Status</title>
 
-<link rel="stylesheet" href="../assets/sbstyle.css">
 <link rel="stylesheet" href="../assets/style.css">
 
 <style>
-body{
+*{
+    box-sizing:border-box;
     margin:0;
-    background:url('../assets/bg.jpg') no-repeat center center fixed;
-    background-size:cover;
-    font-family:Arial;
+    padding:0;
 }
 
+body{
+    font-family:Arial;
+    background:url('../assets/bg.jpg') no-repeat center center fixed;
+    background-size:cover;
+    height:100vh;
+    overflow:hidden; /* IMPORTANT FIX */
+}
+
+/* ===== LAYOUT FIX ===== */
+.wrapper{
+    display:flex;
+    height:100vh;
+    overflow:hidden;
+}
+
+/* MAIN CONTENT */
 .main{
-    margin-left:190px;
+    flex:1;
     padding:20px;
-    width:calc(100% - 190px);
+    overflow-y:auto; /* scroll inside only */
+    height:100vh;
+}
+
+/* TITLE */
+h2{
+    text-align:center;
+    margin-bottom:15px;
+    color:white;
+}
+
+/* TABLE WRAPPER FIX */
+.table-container{
+    width:100%;
+    max-height:75vh;
+    overflow:auto;
+    border-radius:12px;
 }
 
 /* TABLE */
@@ -95,17 +124,23 @@ table{
     box-shadow:0 8px 25px rgba(0,0,0,0.25);
 }
 
+/* HEADER */
 th{
+    position:sticky;
+    top:0;
     background:#1e3c72;
     color:white;
     padding:12px;
+    z-index:2;
 }
 
+/* CELLS */
 td{
     padding:12px;
     text-align:center;
     border-bottom:1px solid rgba(255,255,255,0.1);
     color:#1e3c72;
+    background:rgba(255,255,255,0.85);
 }
 
 /* BUTTONS */
@@ -119,35 +154,31 @@ td{
     display:inline-block;
 }
 
-.edit{
-    background:#3498db;
-}
-
-.cancel{
-    background:#e74c3c;
-}
-
-.locked{
-    color:gray;
-    font-size:12px;
-}
+.edit{ background:#3498db; }
+.cancel{ background:#e74c3c; }
 
 /* TITLE */
 h2{
     text-align:center;
     margin-bottom:20px;
-    color: whitesmoke;
+    color:whitesmoke;
 }
 
-/* MOBILE */
+/* RESPONSIVE */
 @media(max-width:768px){
-    .main{
-        margin-left:0;
-        width:100%;
-        padding:10px;
+    body{
+        overflow:auto;
     }
 
-    table, th, td{
+    .wrapper{
+        flex-direction:column;
+    }
+
+    .main{
+        height:auto;
+    }
+
+    table{
         font-size:12px;
     }
 }
@@ -157,13 +188,16 @@ h2{
 
 <body>
 
+<div class="wrapper">
 <?php include '../assets/sidebar.php'; ?>
 
 <div class="main">
 
 <h2>📊 Project / Activity Proposal Status</h2>
 
+<div class="table-container">
 <table>
+
 <tr>
     <th>Title</th>
     <th>Purpose</th>
@@ -200,20 +234,22 @@ h2{
                 </a>
 
             <?php else: ?>
-                <span class="locked">Locked</span>
+                <span style="color:gray;font-size:12px;">Locked</span>
             <?php endif; ?>
         </td>
 
     </tr>
     <?php endforeach; ?>
 <?php else: ?>
-    <tr>
-        <td colspan="8">No proposals found.</td>
-    </tr>
+<tr>
+    <td colspan="8">No proposals found.</td>
+</tr>
 <?php endif; ?>
 
 </table>
+</div>
 
+</div>
 </div>
 
 </body>

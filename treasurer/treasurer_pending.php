@@ -9,6 +9,7 @@ if (!isset($_SESSION['user']) || $_SESSION['user']['role'] != 'treasurer') {
 
 $barangay_id = $_SESSION['user']['barangay_id'];
 $message = "";
+$messageType = "";
 
 /* ================= APPROVE ================= */
 if (isset($_GET['approve'])) {
@@ -35,7 +36,6 @@ if (isset($_GET['approve'])) {
 
         if ($budget) {
 
-            // ✅ SAFE COMPUTATION (DO NOT TRUST remaining_budget)
             $remaining = $budget['total_amount'] - $budget['used_amount'];
 
             if ($remaining >= $project['budget_requested']) {
@@ -43,7 +43,6 @@ if (isset($_GET['approve'])) {
                 $newUsed = $budget['used_amount'] + $project['budget_requested'];
                 $newRemain = $budget['total_amount'] - $newUsed;
 
-                /* UPDATE BUDGET ONLY ON APPROVE */
                 $stmt = $conn->prepare("
                     UPDATE budgets
                     SET used_amount = ?, remaining_budget = ?
@@ -51,7 +50,6 @@ if (isset($_GET['approve'])) {
                 ");
                 $stmt->execute([$newUsed, $newRemain, $budget['id']]);
 
-                /* APPROVE PROJECT */
                 $stmt = $conn->prepare("
                     UPDATE projects
                     SET status = 'approved'
@@ -59,7 +57,6 @@ if (isset($_GET['approve'])) {
                 ");
                 $stmt->execute([$project_id]);
 
-                /* INSERT TRANSACTION */
                 $stmt = $conn->prepare("
                     INSERT INTO budget_transactions
                     (barangay_id, project_id, amount, description)
@@ -76,18 +73,18 @@ if (isset($_GET['approve'])) {
                 exit();
 
             } else {
-                $message = "❌ Not enough budget to approve this proposal.";
+                $message = "❌ Not enough remaining budget to approve this proposal.";
+                $messageType = "error";
             }
         }
     }
 }
 
-/* ================= REJECT (NO BUDGET CHANGE) ================= */
+/* ================= REJECT ================= */
 if (isset($_GET['reject'])) {
 
     $project_id = (int)$_GET['reject'];
 
-    // ❌ ONLY STATUS UPDATE - NO BUDGET TOUCH
     $stmt = $conn->prepare("
         UPDATE projects
         SET status = 'rejected'
@@ -99,12 +96,15 @@ if (isset($_GET['reject'])) {
     exit();
 }
 
-/* ================= MESSAGES ================= */
+/* ================= MESSAGE ================= */
 if (isset($_GET['success'])) {
-    $message = "✅ Proposal approved and budget deducted.";
+    $message = "✅ Proposal approved successfully. Budget deducted.";
+    $messageType = "success";
 }
+
 if (isset($_GET['rejected'])) {
-    $message = "❌ Proposal rejected (NO budget deducted).";
+    $message = "❌ Proposal rejected successfully.";
+    $messageType = "error";
 }
 
 /* ================= LOAD PENDING ================= */
@@ -118,7 +118,7 @@ $stmt = $conn->prepare("
 $stmt->execute([$barangay_id]);
 $projects = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-/* ================= BUDGET ================= */
+/* ================= CURRENT BUDGET ================= */
 $stmt = $conn->prepare("
     SELECT * FROM budgets
     WHERE barangay_id = ?
@@ -127,6 +127,10 @@ $stmt = $conn->prepare("
 ");
 $stmt->execute([$barangay_id]);
 $currentBudget = $stmt->fetch(PDO::FETCH_ASSOC);
+
+$totalBudget = $currentBudget['total_amount'] ?? 0;
+$usedBudget = $currentBudget['used_amount'] ?? 0;
+$remainingBudget = $currentBudget['remaining_budget'] ?? ($totalBudget - $usedBudget);
 ?>
 
 <!DOCTYPE html>
@@ -134,109 +138,181 @@ $currentBudget = $stmt->fetch(PDO::FETCH_ASSOC);
 <head>
 <title>Treasurer Pending Approval</title>
 
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
 <link rel="stylesheet" href="../assets/style.css">
-<link rel="stylesheet" href="../assets/sbstyle.css">
 
 <style>
+*{
+    box-sizing:border-box;
+    font-family:Arial, sans-serif;
+}
+
 body{
     margin:0;
     background:url('../assets/bg.jpg') no-repeat center center fixed;
     background-size:cover;
+    min-height:100vh;
+}
+
+.wrapper{
+    display:flex;
+    min-height:100vh;
 }
 
 .main{
-    margin-left:190px;
+    flex:1;
     padding:20px;
-    width:calc(100% - 200px);
+    overflow-x:hidden;
+}
+
+h2{
+    text-align:center;
+    color:white;
+    margin-bottom:20px;
+    font-size:28px;
+}
+
+.alert{
+    padding:12px;
+    border-radius:10px;
+    margin-bottom:20px;
+    font-weight:bold;
+}
+
+.success{
+    background:rgba(34,197,94,0.2);
+    color:#dcfce7;
+    border:1px solid rgba(34,197,94,0.4);
+}
+
+.error{
+    background:rgba(239,68,68,0.2);
+    color:#fee2e2;
+    border:1px solid rgba(239,68,68,0.4);
+}
+
+.grid3{
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    gap:15px;
+    margin-bottom:20px;
 }
 
 .glass{
-    background:rgba(255,255,255,0.15);
+    background:rgba(255,255,255,0.13);
     backdrop-filter:blur(18px);
-    border-radius:15px;
+    border-radius:18px;
     padding:20px;
-    color:#fff;
-    box-shadow:0 8px 25px rgba(0,0,0,0.2);
-    margin-bottom: 20px;
+    box-shadow:0 8px 25px rgba(0,0,0,0.25);
+    margin-bottom:20px;
+}
+
+.card{
+    text-align:center;
+    color:white;
+}
+
+.card h3{
+    margin:0;
+    font-size:15px;
+    color:#dbeafe;
+}
+
+.card h2{
+    margin-top:10px;
+    font-size:24px;
+    color:#ffffff;
+}
+
+.section-title{
+    color:white;
+    margin-bottom:15px;
+    font-size:20px;
+}
+
+.table-wrap{
+    width:100%;
+    overflow-x:auto;
 }
 
 table{
     width:100%;
     border-collapse:collapse;
+    min-width:800px;
 }
 
 th{
     background:#1e3c72;
     color:white;
     padding:12px;
+    font-size:14px;
 }
 
 td{
-    padding:10px;
+    padding:12px;
     text-align:center;
+    background:rgba(255,255,255,0.85);
+    color:#1e3c72;
+    font-size:14px;
     border-bottom:1px solid #ddd;
-    color: #1e3c72;
 }
 
-.btn-approve{
-    padding:6px 12px;
-    background:green;
+.action-btn{
+    padding:8px 14px;
+    border-radius:8px;
     color:white;
     text-decoration:none;
-    border-radius:5px;
-}
-
-.btn-reject{
-    padding:6px 12px;
-    background:red;
-    color:white;
-    text-decoration:none;
-    border-radius:5px;
-    margin-left:5px;
-}
-
-.msg{
+    font-size:13px;
     font-weight:bold;
-    margin-bottom:10px;
-}
-h2{
-    color: whitesmoke;
-    text-align: center;
-    margin-bottom: 20px;
-}
-p{
-    color: #1e3c72;
-}
-/* ================= MOBILE RESPONSIVE ================= */
-@media screen and (max-width:768px){
-
-.main{
-    margin-left:0;
-    width:100%;
-    padding:10px;
+    display:inline-block;
+    margin:2px;
+    transition:0.3s;
 }
 
-.form-container{
-    margin:20px auto;
-    width:100%;
+.approve{
+    background:#16a34a;
 }
 
-table, th, td{
-    font-size:12px;
+.approve:hover{
+    background:#15803d;
 }
 
-h2{
-    font-size:18px;
+.reject{
+    background:#dc2626;
 }
 
-h3{
-    font-size:16px;
+.reject:hover{
+    background:#b91c1c;
 }
+
+.empty{
+    text-align:center;
+    color:white;
+    padding:20px;
+}
+
+@media(max-width:900px){
+    .grid3{
+        grid-template-columns:1fr;
+    }
+}
+
+@media(max-width:768px){
+    .main{
+        padding:12px;
+    }
+
+    h2{
+        font-size:22px;
+    }
 }
 </style>
 </head>
 
 <body>
+
+<div class="wrapper">
 
 <?php include '../assets/sidebar.php'; ?>
 
@@ -244,47 +320,70 @@ h3{
 
 <h2>📂 Treasurer Pending Review</h2>
 
-<div class="msg"><?= $message ?></div>
+<?php if($message != ""){ ?>
+    <div class="alert <?= $messageType ?>">
+        <?= $message ?>
+    </div>
+<?php } ?>
 
-<div class="glass">
-    <h3>Budget Overview</h3>
-    <p>Total: ₱<?= number_format($currentBudget['total_amount'] ?? 0,2) ?></p>
-    <p>Used: ₱<?= number_format($currentBudget['used_amount'] ?? 0,2) ?></p>
-    <p>Remaining: ₱<?= number_format($currentBudget['remaining_budget'] ?? 0,2) ?></p>
+<div class="grid3">
+    <div class="glass card">
+        <h3>Total Budget</h3>
+        <h2>₱<?= number_format($totalBudget,2) ?></h2>
+    </div>
+
+    <div class="glass card">
+        <h3>Used Budget</h3>
+        <h2>₱<?= number_format($usedBudget,2) ?></h2>
+    </div>
+
+    <div class="glass card">
+        <h3>Remaining Budget</h3>
+        <h2>₱<?= number_format($remainingBudget,2) ?></h2>
+    </div>
 </div>
 
 <div class="glass">
-<table>
-<tr>
-    <th>ID</th>
-    <th>Title</th>
-    <th>Purpose</th>
-    <th>Budget</th>
-    <th>Action</th>
-</tr>
+    <h3 class="section-title">Pending Proposal List</h3>
 
-<?php if(count($projects)==0){ ?>
-<tr>
-    <td colspan="5">No pending projects</td>
-</tr>
-<?php } ?>
+    <div class="table-wrap">
+        <table>
+            <tr>
+                <th>ID</th>
+                <th>Project Title</th>
+                <th>Purpose</th>
+                <th>Budget Request</th>
+                <th>Action</th>
+            </tr>
 
-<?php foreach($projects as $p){ ?>
-<tr>
-    <td><?= $p['id'] ?></td>
-    <td><?= htmlspecialchars($p['name']) ?></td>
-    <td><?= htmlspecialchars($p['purpose']) ?></td>
-    <td>₱<?= number_format($p['budget_requested'],2) ?></td>
-    <td>
-        <a class="btn-approve" href="?approve=<?= $p['id'] ?>">Approve</a>
-        <a class="btn-reject" href="?reject=<?= $p['id'] ?>">Reject</a>
-    </td>
-</tr>
-<?php } ?>
+            <?php if(count($projects)==0){ ?>
+                <tr>
+                    <td colspan="5" class="empty">No pending projects available.</td>
+                </tr>
+            <?php } ?>
 
-</table>
+            <?php foreach($projects as $p){ ?>
+            <tr>
+                <td><?= $p['id'] ?></td>
+                <td><?= htmlspecialchars($p['name']) ?></td>
+                <td><?= htmlspecialchars($p['purpose']) ?></td>
+                <td>₱<?= number_format($p['budget_requested'],2) ?></td>
+                <td>
+                <td>
+    <a class="action-btn"
+       style="background:#2563eb;"
+       href="treasurer_view.php?id=<?= $p['id'] ?>">
+       👁 View
+    </a>
+</td>
+                </td>
+            </tr>
+            <?php } ?>
+        </table>
+    </div>
 </div>
 
+</div>
 </div>
 
 </body>

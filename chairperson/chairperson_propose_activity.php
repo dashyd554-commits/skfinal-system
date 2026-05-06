@@ -71,48 +71,95 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <html>
 <head>
 <title>Propose Activity</title>
-<link rel="stylesheet" href="../assets/sbstyle.css">
+
 <link rel="stylesheet" href="../assets/style.css">
 
 <style>
-.main{
-    align-self: center;
+
+/* GLOBAL RESET */
+*{
+    box-sizing:border-box;
 }
 
+body{
+    margin:0;
+    font-family:Arial;
+    background:url('../assets/bg.jpg') no-repeat center center fixed;
+    background-size:cover;
+}
+
+/* WRAPPER LIKE OTHER PAGES */
+.wrapper{
+    display:flex;
+    min-height:100vh;
+}
+
+/* MAIN CONTENT FIX */
+.main{
+    flex:1;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    padding:20px;
+}
+
+/* TITLE */
+h2{
+    color:whitesmoke;
+    text-align:center;
+    margin-bottom:20px;
+}
+
+/* FORM CONTAINER */
 .form-box{
-    width:500px;
+    width:100%;
+    max-width:500px;
     background:rgba(255,255,255,0.2);
     padding:20px;
-    border-radius:10px;
-    margin-left:500px;
-    margin-top: 50px;
+    border-radius:12px;
+    backdrop-filter:blur(12px);
 }
 
+/* INPUTS */
 input, textarea{
     width:100%;
     padding:10px;
     margin:8px 0;
+    border:none;
+    border-radius:6px;
 }
 
+/* BUTTON */
 button{
-    padding:10px;
     width:100%;
+    padding:10px;
     background:#1e3c72;
     color:white;
     border:none;
+    border-radius:6px;
+    cursor:pointer;
 }
+
+/* MESSAGE */
 .msg{
-    margin:10px 0;
-    color:green;
+    margin-top:10px;
+    color:#00ff88;
+    text-align:center;
 }
-h2{
-    text-align: center;
-    color: whitesmoke;
+
+/* RESPONSIVE */
+@media(max-width:768px){
+    .form-box{
+        width:95%;
+    }
 }
+
 </style>
 </head>
 
 <body>
+
+<div class="wrapper">
 
 <?php include '../assets/sidebar.php'; ?>
 
@@ -143,6 +190,8 @@ h2{
 </form>
 
 <div class="msg"><?= $message ?></div>
+
+</div>
 
 </div>
 

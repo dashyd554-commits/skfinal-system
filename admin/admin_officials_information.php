@@ -7,226 +7,444 @@ if (!isset($_SESSION['admin'])) {
     exit();
 }
 
-/* ================= UPDATE LAST ACTIVITY (REALTIME STATUS) ================= */
-if (isset($_SESSION['user']['id'])) {
-    $stmt = $conn->prepare("UPDATE users SET last_activity = NOW() WHERE id = ?");
-    $stmt->execute([$_SESSION['user']['id']]);
-}
+/* FILTERS */
+$search = $_GET['search'] ?? '';
+$barangay_filter = $_GET['barangay'] ?? '';
 
-/* ================= GET OFFICIALS ================= */
-$stmt = $conn->prepare("
+$sql = "
     SELECT 
         u.id,
         u.fullname,
         u.age,
-        u.username,
         u.role,
         u.status,
-        u.plain_password,
-        u.last_activity,
-        b.barangay_name,
-
-        CASE 
-            WHEN u.last_activity IS NOT NULL 
-             AND u.last_activity >= NOW() - INTERVAL '5 minutes'
-            THEN 'ACTIVE'
-            ELSE 'INACTIVE'
-        END AS online_status
-
+        u.contact_number,
+        b.barangay_name
     FROM users u
     LEFT JOIN barangays b ON u.barangay_id = b.id
     WHERE u.role IN ('chairman','secretary','treasurer')
-    ORDER BY b.barangay_name ASC
-");
+";
 
-$stmt->execute();
+$params = [];
+
+if (!empty($search)) {
+    $sql .= " AND LOWER(u.fullname) LIKE LOWER(?) ";
+    $params[] = "%$search%";
+}
+
+if (!empty($barangay_filter)) {
+    $sql .= " AND b.barangay_name = ? ";
+    $params[] = $barangay_filter;
+}
+
+$sql .= " ORDER BY u.fullname ASC ";
+
+$stmt = $conn->prepare($sql);
+$stmt->execute($params);
 $officials = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-/* ================= GROUP BY BARANGAY ================= */
-$grouped = [];
+/* COUNTS */
+$totalOfficials = count($officials);
+$chairCount = 0;
+$secCount = 0;
+$treasCount = 0;
 
-foreach ($officials as $o) {
-    $barangay = $o['barangay_name'] ?? 'Unassigned';
-    $grouped[$barangay][] = $o;
+foreach($officials as $o){
+    if($o['role']=='chairman') $chairCount++;
+    if($o['role']=='secretary') $secCount++;
+    if($o['role']=='treasurer') $treasCount++;
 }
+
+/* BARANGAY LIST */
+$bstmt = $conn->prepare("SELECT barangay_name FROM barangays ORDER BY barangay_name ASC");
+$bstmt->execute();
+$barangays = $bstmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
 
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-<title>Officials Information</title>
+<meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Officials Information</title>
 
 <link rel="stylesheet" href="../assets/style.css">
-<link rel="stylesheet" href="../assets/sbstyle.css">
 
 <style>
-*{
-    margin:0;
-    padding:0;
-    box-sizing:border-box;
-    font-family:Arial, sans-serif;
-}
+*, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
 
 body{
+    font-family:'Segoe UI', system-ui, sans-serif;
     background:url('../assets/bg.jpg') no-repeat center center fixed;
     background-size:cover;
+}
+
+.wrapper{
+    display:flex;
+    width:100%;
     min-height:100vh;
-    overflow-x:hidden;
 }
 
 .main{
-    margin-left:90px;
-    width:calc(100% - 90px);
-    padding:20px;
+    flex:1;
+    min-width:0;
+    padding:28px 24px;
+    overflow-y:auto;
 }
 
-.header{
+.page-title{
+    color:#e8eaf0;
+    font-size:22px;
+    font-weight:600;
+    margin-bottom:24px;
+    padding-bottom:14px;
+    border-bottom:1px solid rgba(255,255,255,0.08);
+}
+
+.kpi-grid{
+    display:grid;
+    grid-template-columns:repeat(4,1fr);
+    gap:14px;
+    margin-bottom:22px;
+}
+
+.kpi-card{
+    background:rgba(255,255,255,0.06);
+    border:1px solid rgba(255,255,255,0.09);
+    border-radius:14px;
+    padding:18px 14px;
     text-align:center;
-    color:white;
-    margin-bottom:25px;
-}
-
-.card{
-    width:100%;
-    background:rgba(255,255,255,0.15);
     backdrop-filter:blur(18px);
-    padding:20px;
-    border-radius:18px;
-    margin-bottom:25px;
 }
 
-.official-box{
-    background:rgba(255,255,255,0.95);
-    border-radius:12px;
-    padding:15px;
-    margin-bottom:15px;
-}
-
-.info{
-    font-size:14px;
-    margin:6px 0;
-}
-
-.badge{
-    display:inline-block;
-    padding:4px 8px;
-    border-radius:5px;
-    color:white;
+.kpi-card .kpi-label{
     font-size:11px;
-    font-weight:bold;
+    color:white;
+    margin-bottom:8px;
+    text-transform:uppercase;
+    letter-spacing:.08em;
+    font-weight: ;
 }
 
-.verifyyes{background:#28a745;}
-.adminno{background:#dc3545;}
+.kpi-card .kpi-value{
+    font-size:28px;
+    font-weight:700;
+    color:#1e3c72;
+}
 
-.actions{
-    margin-top:12px;
+.glass{
+    background:rgba(255,255,255,0.05);
+    border:1px solid rgba(255,255,255,0.09);
+    border-radius:16px;
+    padding:22px;
+    margin-bottom:20px;
+    backdrop-filter:blur(18px);
+}
+
+.glass-title{
+    font-size:15px;
+    font-weight:600;
+    color:whitesmoke;
+    margin-bottom:16px;
+}
+
+/* FILTERS */
+.filters{
     display:flex;
-    gap:8px;
+    gap:10px;
+    margin-bottom:15px;
     flex-wrap:wrap;
 }
-
-.actions a{
-    text-decoration:none;
-    padding:8px 14px;
-    border-radius:7px;
+.filters input,.filters select{
+    flex:1;
+    padding:12px;
+    border:none;
+    border-radius:10px;
+    background:rgba(255,255,255,0.07);
     color:white;
-    font-size:12px;
+    outline:none;
+}
+.filters button{
+    width:120px;
+    border:none;
+    border-radius:10px;
+    background:#5b8af5;
+    color:white;
+    cursor:pointer;
+    font-weight:600;
 }
 
-.edit{background:#007bff;}
-.delete{background:#dc3545;}
+/* TABLE */
+.table-container{
+    max-height:430px;
+    overflow-y:auto;
+    overflow-x:hidden;
+    border-radius:12px;
+}
+
+table{
+    width:100%;
+    table-layout:fixed;
+    border-collapse:collapse;
+    color:white;
+    font-size:13px;
+}
+
+th{
+    background-color: #1e3c72;
+    padding:12px 8px;
+    position:sticky;
+    top:0;
+    z-index:2;
+    white-space:nowrap;
+}
+
+td{
+    padding:12px 8px;
+    text-align:center;
+    border-bottom:1px solid rgba(255,255,255,0.06);
+    word-wrap:break-word;
+    overflow-wrap:break-word;
+    color: #1e3c72;
+    font-weight: bold;
+}
+
+tr:hover{
+    background:rgba(255,255,255,0.04);
+}
+.btn{
+    padding:7px 13px;
+    border-radius:8px;
+    text-decoration:none;
+    color:white;
+    font-size:12px;
+    margin:2px;
+    display:inline-block;
+}
+.view{ background:#17a2b8; }
+.active{ background:#dc3545; }
 
 .footer{
     text-align:center;
-    margin-top:20px;
     padding:14px;
-    color:white;
-    background:rgba(0,0,0,0.25);
-    border-radius:10px;
+    color:#5a6070;
+    font-size:12px;
+    margin-top:8px;
+    border-top:1px solid rgba(255,255,255,0.06);
 }
 
-/* MOBILE FIX */
+/* MOBILE */
+.hamburger{
+    display:none;
+    position:fixed;
+    top:14px;
+    left:14px;
+    z-index:200;
+    background:#1a1f2e;
+    border:1px solid rgba(255,255,255,0.12);
+    border-radius:8px;
+    width:38px;
+    height:38px;
+    cursor:pointer;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:5px;
+}
+.hamburger span{
+    width:18px;
+    height:2px;
+    background:#c5cad8;
+}
+.overlay{
+    display:none;
+    position:fixed;
+    inset:0;
+    background:rgba(0,0,0,0.5);
+    z-index:99;
+}
+
 @media(max-width:768px){
-    .footer{
-        font-size:11px;
-        padding:10px;
+    .sidebar{
+        position:fixed !important;
+        left:-260px !important;
+        top:0;
+        bottom:0;
+        z-index:100;
+        width:240px !important;
+        transition:left .25s ease;
+    }
+    .sidebar.open{ left:0 !important; }
+    .overlay.open{ display:block; }
+    .hamburger{ display:flex; }
+    .main{ padding:64px 16px 20px; }
+    .kpi-grid{ grid-template-columns:repeat(2,1fr); }
+}
+/* PRINT SETTINGS */
+@media print{
+    body{
+        background:white !important;
+    }
+    #printHeader{
+        display:block !important;
+    }
+
+    .sidebar,
+    .hamburger,
+    .overlay,
+    .filters,
+    .footer,
+    .btn{
+        display:none !important;
+    }
+
+    .main{
+        padding:0;
+        margin:0;
+        width:100%;
+    }
+
+    .glass{
+        background:white !important;
+        border:none !important;
+        box-shadow:none !important;
+        padding:0;
+    }
+
+    .kpi-grid{
+        margin-bottom:20px;
+    }
+
+    .kpi-card{
+        border:1px solid #ccc;
+        background:white !important;
+        color:black !important;
+    }
+
+    .kpi-label,
+    .kpi-value,
+    .page-title,
+    .glass-title{
+        color:black !important;
+    }
+
+    table{
+        color:black !important;
+        font-size:12px;
+    }
+
+    th{
+        background:#d9d9d9 !important;
+        color:black !important;
+    }
+
+    td{
+        color:black !important;
+        border:1px solid #ccc;
+    }
+
+    .table-container{
+        max-height:none;
+        overflow:visible;
     }
 }
 </style>
 </head>
-
 <body>
+
+<button class="hamburger" onclick="toggleSidebar()">
+    <span></span><span></span><span></span>
+</button>
+<div class="overlay" id="overlay" onclick="toggleSidebar()"></div>
+
+<div class="wrapper">
 
 <?php include '../assets/sidebar.php'; ?>
 
 <div class="main">
 
-<div class="header">
-    <h2>👥 SK Officials Registry</h2>
-    <p>Real-time Active / Inactive Monitoring</p>
-</div>
+    <h1 class="page-title">👥 SK Officials Information</h1>
 
-<?php if(!empty($grouped)){ ?>
-
-    <?php foreach($grouped as $barangay => $list){ ?>
-
-        <div class="card">
-
-            <h3 style="color:white;">🏘️ <?= htmlspecialchars($barangay) ?></h3>
-
-            <?php foreach($list as $o){ ?>
-
-                <div class="official-box">
-
-                    <h4><?= htmlspecialchars($o['role']) ?></h4>
-
-                    <div class="info"><b>Full Name:</b> <?= htmlspecialchars($o['fullname'] ?? 'N/A') ?></div>
-                    <div class="info"><b>Age:</b> <?= htmlspecialchars($o['age'] ?? 'N/A') ?></div>
-                    <div class="info"><b>Username:</b> <?= htmlspecialchars($o['username']) ?></div>
-
-                    <!-- ✅ PASSWORD NOW VISIBLE TO ADMIN -->
-                    <div class="info">
-                        <b>Password:</b> <?= htmlspecialchars($o['plain_password'] ?? 'N/A') ?>
-                    </div>
-
-                    <div class="info">
-                        <b>Status:</b>
-                        <span class="badge <?= $o['online_status'] === 'ACTIVE' ? 'verifyyes' : 'adminno' ?>">
-                            <?= $o['online_status'] ?>
-                        </span>
-                    </div>
-
-                    <div class="actions">
-                        <a class="edit" href="admin_edit_account.php?id=<?= $o['id'] ?>">✏ Edit</a>
-                        <a class="delete" href="admin_delete.php?id=<?= $o['id'] ?>"
-                           onclick="return confirm('Delete this account?')">
-                           🗑 Delete
-                        </a>
-                    </div>
-
-                </div>
-
-            <?php } ?>
-
-        </div>
-
-    <?php } ?>
-
-<?php } else { ?>
-
-    <div class="card">
-        <p style="color:white;">No officials found.</p>
+    <div class="kpi-grid">
+        <div class="kpi-card"><div class="kpi-label">TOTAL OFFICIALS</div><div class="kpi-value"><?= $totalOfficials ?></div></div>
+        <div class="kpi-card"><div class="kpi-label">CHAIRMEN</div><div class="kpi-value"><?= $chairCount ?></div></div>
+        <div class="kpi-card"><div class="kpi-label">SECRETARIES</div><div class="kpi-value"><?= $secCount ?></div></div>
+        <div class="kpi-card"><div class="kpi-label">TREASURERS</div><div class="kpi-value"><?= $treasCount ?></div></div>
     </div>
 
-<?php } ?>
+    <div class="glass">
+    <div id="printHeader" style="display:none; text-align:center; margin-bottom:20px;">
+    <h2>SK OFFICIALS REGISTRY REPORT</h2>
+    <p>Generated on: <?= date('F d, Y h:i A') ?></p>
+    <hr style="margin-top:10px;">
+</div>
+        <div class="glass-title">📋 Officials Registry Table</div>
 
-<div class="footer">
-    © 2026 SK Decision Support System | Responsive Community Planning Platform
+        <form method="GET" class="filters">
+            <input type="text" name="search" placeholder="Search by fullname..." value="<?= htmlspecialchars($search) ?>">
+            <select name="barangay">
+                <option value="">All Barangays</option>
+                <?php foreach($barangays as $b){ ?>
+                    <option value="<?= $b['barangay_name'] ?>" <?= ($barangay_filter==$b['barangay_name'])?'selected':'' ?>>
+                        <?= htmlspecialchars($b['barangay_name']) ?>
+                    </option>
+                <?php } ?>
+            </select>
+            <button type="submit">Filter</button>
+            <button type="button" onclick="printOfficials()">🖨 Print</button>
+        </form>
+
+        <div class="table-container">
+            <table>
+                <tr>
+                    <th>POSITION</th>
+                    <th>FULLNAME</th>
+                    <th>AGE</th>
+                    <th>BARANGAY</th>
+                    <th>CONTACT NUMBER</th>
+                    <th>ACTION</th>
+                </tr>
+
+                <?php if(!empty($officials)){ ?>
+                    <?php foreach($officials as $o){ ?>
+                    <tr>
+                        <td><?= ucfirst($o['role']) ?></td>
+                        <td><?= htmlspecialchars($o['fullname']) ?></td>
+                        <td><?= htmlspecialchars($o['age']) ?></td>
+                        <td><?= htmlspecialchars($o['barangay_name']) ?></td>
+                        <td><?= htmlspecialchars($o['contact_number'] ?? 'N/A') ?></td>
+                        <td>
+                            <a href="admin_view_official.php?id=<?= $o['id'] ?>" class="btn view">View</a>
+                            <a href="admin_deactivate_official.php?id=<?= $o['id'] ?>" class="btn active"
+                               onclick="return confirm('Are you sure you want to deactivate this account?')">Active</a>
+                        </td>
+                    </tr>
+                    <?php } ?>
+                <?php } else { ?>
+                    <tr><td colspan="6">No officials found.</td></tr>
+                <?php } ?>
+            </table>
+        </div>
+    </div>
+
+    <div class="footer">
+        © 2026 SK Decision Support System | Responsive Community Planning Platform
+    </div>
+
+</div>
 </div>
 
-</div>
+<script>
+function toggleSidebar() {
+    document.querySelector('.sidebar').classList.toggle('open');
+    document.getElementById('overlay').classList.toggle('open');
+}
+</script>
+<script>
+function printOfficials(){
+    window.print();
+}
+</script>
 
 </body>
 </html>

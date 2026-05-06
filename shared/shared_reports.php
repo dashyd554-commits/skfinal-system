@@ -8,13 +8,13 @@ if (!isset($_SESSION['user'])) {
 }
 
 $barangay_id = $_SESSION['user']['barangay_id'];
-$user_id = $_SESSION['user']['id'] ?? $_SESSION['user']['user_id'] ?? null;
+$created_by = $_SESSION['user']['id'] ?? $_SESSION['user']['user_id'] ?? null;
 
-if (!$user_id) {
+if (!$created_by) {
     die("User ID not found in session.");
 }
 
-/* ================= APPROVED PROJECTS ================= */
+/* ================= FETCH DATA (UNCHANGED LOGIC) ================= */
 $stmt = $conn->prepare("
     SELECT *
     FROM projects
@@ -25,7 +25,6 @@ $stmt = $conn->prepare("
 $stmt->execute([':barangay_id' => $barangay_id]);
 $approved = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
-/* ================= REJECTED PROJECTS ================= */
 $stmt = $conn->prepare("
     SELECT *
     FROM projects
@@ -36,7 +35,6 @@ $stmt = $conn->prepare("
 $stmt->execute([':barangay_id' => $barangay_id]);
 $rejected = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
-/* ================= BUDGET UTILIZATION ================= */
 $stmt = $conn->prepare("
     SELECT 
         b.total_amount,
@@ -64,7 +62,6 @@ $totalBudget = $budget['total_amount'] ?? 0;
 $usedBudget = $budget['used_amount'] ?? 0;
 $remaining = $budget['remaining_budget'] ?? ($totalBudget - $usedBudget);
 
-/* ================= PARTICIPATION TREND ================= */
 $stmt = $conn->prepare("
     SELECT 
         name AS title,
@@ -79,7 +76,6 @@ $stmt = $conn->prepare("
 $stmt->execute([':barangay_id' => $barangay_id]);
 $trend = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
-/* ================= PERFORMANCE ================= */
 $stmt = $conn->prepare("
     SELECT 
         COUNT(*) AS total_projects,
@@ -92,7 +88,6 @@ $stmt = $conn->prepare("
 $stmt->execute([':barangay_id' => $barangay_id]);
 $performance = $stmt->fetch(PDO::FETCH_ASSOC);
 
-/* ================= VOTING ================= */
 $stmt = $conn->prepare("
     SELECT 
         p.id,
@@ -109,7 +104,7 @@ $stmt = $conn->prepare("
 ");
 $stmt->execute([
     ':bid' => $barangay_id,
-    ':uid' => $user_id
+    ':uid' => $created_by
 ]);
 $voting = $stmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
@@ -119,45 +114,63 @@ $voting = $stmt->fetchAll(PDO::FETCH_ASSOC);
 <head>
 <title>Shared Reports Dashboard</title>
 
-<link rel="stylesheet" href="../assets/sbstyle.css">
 <link rel="stylesheet" href="../assets/style.css">
 
 <style>
-*{box-sizing:border-box;}
+*{
+    box-sizing:border-box;
+    margin:0;
+    padding:0;
+}
 
 body{
     margin:0;
+    font-family:Arial;
     background:url('../assets/bg.jpg') no-repeat center center fixed;
     background-size:cover;
-    font-family:Arial;
+    height:100vh;
+    overflow:hidden;
 }
 
+/* ===== LAYOUT FIX ===== */
+.wrapper{
+    display:flex;
+    height:100vh;
+    overflow:hidden;
+}
+
+/* MAIN CONTENT */
 .main{
-    margin-left:190px;
+    flex:1;
     padding:20px;
-    width:calc(100% - 200px);
+    overflow-y:auto;
+    height:100vh;
 }
 
+/* TITLE */
 .header h2{
     color:white;
     text-align:center;
-    margin-bottom:20px;
+    margin-bottom:15px;
 }
 
-/* KPI BALANCED ROWS */
+/* GRID */
 .grid{
     display:flex;
     flex-direction:column;
     gap:15px;
 }
 
+/* ROWS */
 .row{
     display:flex;
     gap:15px;
+    flex-wrap:wrap;
 }
 
 .row.top .glass{
     flex:1;
+    min-width:180px;
 }
 
 .row.bottom{
@@ -168,24 +181,17 @@ body{
     width:250px;
 }
 
+/* GLASS CARD */
 .glass{
     background:rgba(255,255,255,0.15);
     backdrop-filter:blur(18px);
     border-radius:15px;
-    padding:20px;
+    padding:18px;
     color:#fff;
     box-shadow:0 8px 25px rgba(0,0,0,0.2);
-    margin-bottom:20px;
 }
 
-.card{text-align:center;}
-.card h2{color:#1e3c72;}
-
-.section-title{
-    color:white;
-    margin-bottom:10px;
-}
-
+/* TABLE FIX */
 table{
     width:100%;
     border-collapse:collapse;
@@ -196,6 +202,8 @@ th{
     background:#1e3c72;
     color:white;
     padding:12px;
+    position:sticky;
+    top:0;
 }
 
 td{
@@ -203,30 +211,31 @@ td{
     text-align:center;
     border-bottom:1px solid rgba(255,255,255,0.2);
     color:#1e3c72;
+    background:rgba(255,255,255,0.85);
 }
 
-p{
-    color:#1e3c72;
-    line-height:1.8;
-}
-
-h3{
+/* TITLES */
+.section-title{
     color:white;
+    margin-bottom:10px;
 }
 
+/* RESPONSIVE */
 @media(max-width:768px){
+    body{
+        overflow:auto;
+    }
+
+    .wrapper{
+        flex-direction:column;
+    }
+
     .main{
-        margin-left:0;
-        width:100%;
-        padding:10px;
+        height:auto;
     }
 
     .row{
         flex-direction:column;
-    }
-
-    .row.bottom{
-        align-items:center;
     }
 
     .row.bottom .glass{
@@ -239,119 +248,97 @@ h3{
 
 <body>
 
+<div class="wrapper">
 <?php include '../assets/sidebar.php'; ?>
 
 <div class="main">
 
-    <div class="header">
-        <h2>📊 Shared Reports Dashboard</h2>
-    </div>
+<div class="header">
+    <h2>📊 Shared Reports Dashboard</h2>
+</div>
 
-    <div class="grid">
+<div class="grid">
 
-        <!-- TOP ROW -->
-        <div class="row top">
-            <div class="glass card">
-                <h3>✅ Approved Projects</h3>
-                <h2><?= count($approved) ?></h2>
-            </div>
-
-            <div class="glass card">
-                <h3>❌ Rejected Projects</h3>
-                <h2><?= count($rejected) ?></h2>
-            </div>
-
-            <div class="glass card">
-                <h3>💰 Total Budget</h3>
-                <h2>₱<?= number_format($totalBudget,2) ?></h2>
-            </div>
+    <div class="row top">
+        <div class="glass">
+            <h3>✅ Approved Projects</h3>
+            <h2><?= count($approved) ?></h2>
         </div>
 
-        <!-- BOTTOM ROW -->
-        <div class="row bottom">
-            <div class="glass card">
-                <h3>💸 Used Budget</h3>
-                <h2>₱<?= number_format($usedBudget,2) ?></h2>
-            </div>
-
-            <div class="glass card">
-                <h3>📉 Remaining Budget</h3>
-                <h2>₱<?= number_format($remaining,2) ?></h2>
-            </div>
+        <div class="glass">
+            <h3>❌ Rejected Projects</h3>
+            <h2><?= count($rejected) ?></h2>
         </div>
 
+        <div class="glass">
+            <h3>💰 Total Budget</h3>
+            <h2>₱<?= number_format($totalBudget,2) ?></h2>
+        </div>
     </div>
 
-    <div class="glass">
-        <h3 class="section-title">Approved Projects Report</h3>
-        <table>
-            <tr><th>Project Name</th><th>Budget</th><th>Status</th></tr>
-            <?php foreach($approved as $a){ ?>
-            <tr>
-                <td><?= htmlspecialchars($a['name']) ?></td>
-                <td>₱<?= number_format($a['budget_requested'],2) ?></td>
-                <td>Approved</td>
-            </tr>
-            <?php } ?>
-        </table>
+    <div class="row bottom">
+        <div class="glass">
+            <h3>💸 Used Budget</h3>
+            <h2>₱<?= number_format($usedBudget,2) ?></h2>
+        </div>
+
+        <div class="glass">
+            <h3>📉 Remaining Budget</h3>
+            <h2>₱<?= number_format($remaining,2) ?></h2>
+        </div>
     </div>
 
-    <div class="glass">
-        <h3 class="section-title">Rejected Projects Report</h3>
-        <table>
-            <tr><th>Project Name</th><th>Budget</th><th>Status</th></tr>
-            <?php foreach($rejected as $r){ ?>
-            <tr>
-                <td><?= htmlspecialchars($r['name']) ?></td>
-                <td>₱<?= number_format($r['budget_requested'],2) ?></td>
-                <td>Rejected</td>
-            </tr>
-            <?php } ?>
-        </table>
-    </div>
+</div>
 
-    <div class="glass">
-        <h3 class="section-title">Yearly Budget Utilization</h3>
-        <p><b>Total Budget:</b> ₱<?= number_format($totalBudget,2) ?></p>
-        <p><b>Used Budget:</b> ₱<?= number_format($usedBudget,2) ?></p>
-        <p><b>Remaining Budget:</b> ₱<?= number_format($remaining,2) ?></p>
-    </div>
+<!-- TABLES -->
+<div class="glass">
+    <h3 class="section-title">Approved Projects</h3>
+    <table>
+        <tr><th>Name</th><th>Budget</th></tr>
+        <?php foreach($approved as $a){ ?>
+        <tr>
+            <td><?= htmlspecialchars($a['name']) ?></td>
+            <td>₱<?= number_format($a['budget_requested'],2) ?></td>
+        </tr>
+        <?php } ?>
+    </table>
+</div>
 
-    <div class="glass">
-        <h3 class="section-title">Participation Trend</h3>
-        <table>
-            <tr><th>Project</th><th>Participants</th><th>Budget</th></tr>
-            <?php foreach($trend as $t){ ?>
-            <tr>
-                <td><?= htmlspecialchars($t['title']) ?></td>
-                <td><?= $t['participants'] ?></td>
-                <td>₱<?= number_format($t['budget'],2) ?></td>
-            </tr>
-            <?php } ?>
-        </table>
-    </div>
+<div class="glass">
+    <h3 class="section-title">Rejected Projects</h3>
+    <table>
+        <tr><th>Name</th><th>Budget</th></tr>
+        <?php foreach($rejected as $r){ ?>
+        <tr>
+            <td><?= htmlspecialchars($r['name']) ?></td>
+            <td>₱<?= number_format($r['budget_requested'],2) ?></td>
+        </tr>
+        <?php } ?>
+    </table>
+</div>
 
-    <div class="glass">
-        <h3 class="section-title">Barangay Project Performance</h3>
-        <p><b>Total Projects:</b> <?= $performance['total_projects'] ?></p>
-        <p><b>Approved:</b> <?= $performance['approved_projects'] ?></p>
-        <p><b>Rejected:</b> <?= $performance['rejected_projects'] ?></p>
-    </div>
+<div class="glass">
+    <h3 class="section-title">Performance</h3>
+    <p>Total: <?= $performance['total_projects'] ?></p>
+    <p>Approved: <?= $performance['approved_projects'] ?></p>
+    <p>Rejected: <?= $performance['rejected_projects'] ?></p>
+</div>
 
-    <div class="glass">
-        <h3 class="section-title">SK Council Vote Tally</h3>
-        <table>
-            <tr><th>Project</th><th>YES</th><th>NO</th></tr>
-            <?php foreach($voting as $v){ ?>
-            <tr>
-                <td><?= htmlspecialchars($v['name']) ?></td>
-                <td><?= $v['vote_yes'] ?></td>
-                <td><?= $v['vote_no'] ?></td>
-            </tr>
-            <?php } ?>
-        </table>
-    </div>
+<div class="glass">
+    <h3 class="section-title">Voting</h3>
+    <table>
+        <tr><th>Project</th><th>Yes</th><th>No</th></tr>
+        <?php foreach($voting as $v){ ?>
+        <tr>
+            <td><?= htmlspecialchars($v['name']) ?></td>
+            <td><?= $v['vote_yes'] ?></td>
+            <td><?= $v['vote_no'] ?></td>
+        </tr>
+        <?php } ?>
+    </table>
+</div>
 
+</div>
 </div>
 
 </body>

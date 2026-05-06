@@ -82,7 +82,6 @@ $transactions = $stmt->fetchAll(PDO::FETCH_ASSOC);
 <title>Treasurer Dashboard</title>
 
 <link rel="stylesheet" href="../assets/style.css">
-<link rel="stylesheet" href="../assets/sbstyle.css">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <style>
@@ -93,36 +92,43 @@ $transactions = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 body{
     margin:0;
+    height:100vh;
+    overflow:hidden;
     background:url('../assets/bg.jpg') no-repeat center center fixed;
     background-size:cover;
 }
 
-body::before{
-    content:"";
-    position:fixed;
-    inset:0;
-    background:rgba(0,0,0,0.4);
-    z-index:-1;
+.wrapper{
+    display:flex;
+    height:100vh;
+    width:100%;
 }
 
 .main{
-    margin-left:190px;
+    flex:1;
+    height:100vh;
+    overflow-y:auto;
     padding:20px;
-    width:calc(100% - 200px);
+}
+
+h2{
+    color:whitesmoke;
+    text-align:center;
+    margin-bottom:20px;
 }
 
 .grid4{
     display:grid;
     grid-template-columns:repeat(4,1fr);
-    gap:20px;
-    margin-bottom:20px;
+    gap:15px;
+    margin-bottom:15px;
 }
 
 .grid3{
     display:grid;
     grid-template-columns:repeat(3,1fr);
-    gap:20px;
-    margin-bottom:20px;
+    gap:15px;
+    margin-bottom:15px;
 }
 
 .glass{
@@ -130,8 +136,9 @@ body::before{
     backdrop-filter:blur(18px);
     border-radius:15px;
     padding:20px;
-    color:#fff;
+    color:white;
     box-shadow:0 8px 25px rgba(0,0,0,0.2);
+    margin-bottom:15px;
 }
 
 .card{
@@ -140,8 +147,7 @@ body::before{
 
 .card h3{
     margin:0;
-    font-size:14px;
-    color:#ddd;
+    font-size:15px;
 }
 
 .card h2{
@@ -150,37 +156,39 @@ body::before{
 }
 
 .section-title{
-    color:#fff;
+    color:white;
     margin-bottom:15px;
 }
 
+.chart-box{
+    height:320px;
+    width:100%;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+}
+
 .chart-holder{
-    width:320px;
-    margin:auto;
+    width:300px;
+    height:300px;
 }
 
 table{
     width:100%;
     border-collapse:collapse;
-    color:#fff;
 }
 
 th{
-    background:rgba(30,60,114,0.85);
+    background:#1e3c72;
+    color:white;
     padding:12px;
 }
 
 td{
-    padding:10px;
+    padding:12px;
     text-align:center;
     border-bottom:1px solid rgba(255,255,255,0.2);
-    color: #1e3c72;
-}
-
-h2{
-    color:whitesmoke;
-    text-align:center;
-    margin-bottom:20px;
+    color:#1e3c72;
 }
 
 @media(max-width:1000px){
@@ -190,12 +198,24 @@ h2{
 }
 
 @media(max-width:768px){
+    body{
+        overflow:auto;
+    }
+
+    .wrapper{
+        flex-direction:column;
+    }
+
     .main{
-        margin-left:70px;
+        height:auto;
     }
 
     .grid4,.grid3{
         grid-template-columns:1fr;
+    }
+
+    table,th,td{
+        font-size:12px;
     }
 }
 </style>
@@ -203,115 +223,79 @@ h2{
 
 <body>
 
+<div class="wrapper">
+
 <?php include '../assets/sidebar.php'; ?>
 
 <div class="main">
 
-    <h2>💰 Treasurer Financial Dashboard</h2>
+<h2>💰 Treasurer Financial Dashboard</h2>
 
-    <!-- TOP ROW -->
-    <div class="grid4">
+<div class="grid4">
+    <div class="glass card"><h3>Annual Budget</h3><h2>₱<?= number_format($annualBudget,2) ?></h2></div>
+    <div class="glass card"><h3>Used Budget</h3><h2>₱<?= number_format($usedBudget,2) ?></h2></div>
+    <div class="glass card"><h3>Remaining Budget</h3><h2>₱<?= number_format($remainingBudget,2) ?></h2></div>
+    <div class="glass card"><h3>Pending Proposal</h3><h2><?= $totalPendingProposal ?></h2></div>
+</div>
 
-        <div class="glass card">
-            <h3>Annual Budget</h3>
-            <h2>₱<?= number_format($annualBudget,2) ?></h2>
-        </div>
+<div class="grid3">
+    <div class="glass card"><h3>Rejected Proposals</h3><h2><?= $rejectedFunds ?></h2></div>
+    <div class="glass card"><h3>Approved Proposal</h3><h2><?= $totalApprovedProposal ?></h2></div>
+    <div class="glass card"><h3>Approved Disbursement</h3><h2>₱<?= number_format($approvedDisbursement,2) ?></h2></div>
+</div>
 
-        <div class="glass card">
-            <h3>Used Budget</h3>
-            <h2>₱<?= number_format($usedBudget,2) ?></h2>
-        </div>
-
-        <div class="glass card">
-            <h3>Remaining Budget</h3>
-            <h2>₱<?= number_format($remainingBudget,2) ?></h2>
-        </div>
-
-        <div class="glass card">
-            <h3>Pending Proposal</h3>
-            <h2><?= $totalPendingProposal ?></h2>
-        </div>
-
-    </div>
-
-    <!-- SECOND ROW -->
-    <div class="grid3">
-
-    <div class="glass card">
-            <h3>Rejected Proposals</h3>
-            <h2><?= $rejectedFunds ?></h2>
-        </div>
-
-        <div class="glass card">
-            <h3>Approved Proposal</h3>
-            <h2><?= $totalApprovedProposal ?></h2>
-        </div>
-
-        <div class="glass card">
-            <h3>Approved Disbursement</h3>
-            <h2>₱<?= number_format($approvedDisbursement,2) ?></h2>
-        </div>
-
-    </div>
-
-    <!-- CHART -->
-    <div class="glass" style="margin-bottom:20px;">
-        <h3 class="section-title">📊 Budget Utilization</h3>
+<div class="glass">
+    <h3 class="section-title">📊 Budget Utilization</h3>
+    <div class="chart-box">
         <div class="chart-holder">
             <canvas id="budgetChart"></canvas>
         </div>
     </div>
+</div>
 
-    <!-- TABLE -->
-    <div class="glass">
+<div class="glass">
+    <h3 class="section-title">💸 Recent Spending Transactions</h3>
 
-        <h3 class="section-title">💸 Recent Spending Transactions</h3>
+    <table>
+        <tr>
+            <th>ID</th>
+            <th>Amount</th>
+            <th>Description</th>
+            <th>Date</th>
+        </tr>
 
-        <table>
-            <tr>
-                <th>ID</th>
-                <th>Amount</th>
-                <th>Description</th>
-                <th>Date</th>
-            </tr>
+        <?php if(empty($transactions)){ ?>
+            <tr><td colspan="4">No transactions yet</td></tr>
+        <?php } ?>
 
-            <?php if(empty($transactions)){ ?>
-                <tr>
-                    <td colspan="4">No transactions yet</td>
-                </tr>
-            <?php } ?>
+        <?php foreach($transactions as $t){ ?>
+        <tr>
+            <td><?= $t['id'] ?></td>
+            <td>₱<?= number_format($t['amount'],2) ?></td>
+            <td><?= htmlspecialchars($t['description']) ?></td>
+            <td><?= date('F d, Y h:i A', strtotime($t['created_at'])) ?></td>
+        </tr>
+        <?php } ?>
+    </table>
+</div>
 
-            <?php foreach($transactions as $t){ ?>
-            <tr>
-                <td><?= $t['id'] ?></td>
-                <td>₱<?= number_format($t['amount'],2) ?></td>
-                <td><?= htmlspecialchars($t['description']) ?></td>
-                <td><?= date('F d, Y h:i A', strtotime($t['created_at'])) ?></td>
-            </tr>
-            <?php } ?>
-
-        </table>
-
-    </div>
-
+</div>
 </div>
 
 <script>
 new Chart(document.getElementById('budgetChart'), {
-    type: 'doughnut',
-    data: {
-        labels: ['Used Budget','Remaining Budget'],
-        datasets: [{
-            data: [
-                <?= (float)$usedBudget ?>,
-                <?= (float)$remainingBudget ?>
-            ]
+    type:'doughnut',
+    data:{
+        labels:['Used Budget','Remaining Budget'],
+        datasets:[{
+            data:[<?= (float)$usedBudget ?>, <?= (float)$remainingBudget ?>]
         }]
     },
     options:{
         responsive:true,
+        maintainAspectRatio:false,
         plugins:{
-            legend:{ position:'bottom' }
+            legend:{position:'bottom'}
         }
     }
 });

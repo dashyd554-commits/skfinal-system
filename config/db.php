@@ -23,7 +23,9 @@ try {
         ]
     );
 
+    /* ✅ ADD THIS LINE (IMPORTANT FIX) */
+    $pdo = $conn;
+
 } catch (PDOException $e) {
     die("Database Connection Failed: " . $e->getMessage());
 }
-?>

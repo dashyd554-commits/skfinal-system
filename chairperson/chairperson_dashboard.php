@@ -10,17 +10,7 @@ if (!isset($_SESSION['user']) || $_SESSION['user']['role'] != 'chairman') {
 $barangay_id = $_SESSION['user']['barangay_id'];
 $user_id     = $_SESSION['user']['id'];
 
-/* =========================================================
-   OPTIONAL AUTO RUN PYTHON ML EVERY DASHBOARD LOAD
-========================================================= */
-$python_file = "../ml/train_ml.py";
-if (file_exists($python_file)) {
-    @exec("python $python_file");
-}
-
-/* =========================================================
-   TOTAL PROPOSALS
-========================================================= */
+/* ================= TOTAL PROPOSALS ================= */
 $stmt = $conn->prepare("
     SELECT COUNT(*)
     FROM projects
@@ -31,9 +21,7 @@ $stmt = $conn->prepare("
 $stmt->execute([':bid'=>$barangay_id, ':uid'=>$user_id]);
 $totalProposals = (int)$stmt->fetchColumn();
 
-/* =========================================================
-   APPROVED
-========================================================= */
+/* ================= APPROVED ================= */
 $stmt = $conn->prepare("
     SELECT COUNT(*)
     FROM projects
@@ -44,9 +32,7 @@ $stmt = $conn->prepare("
 $stmt->execute([':bid'=>$barangay_id, ':uid'=>$user_id]);
 $approved = (int)$stmt->fetchColumn();
 
-/* =========================================================
-   REJECTED
-========================================================= */
+/* ================= REJECTED ================= */
 $stmt = $conn->prepare("
     SELECT COUNT(*)
     FROM projects
@@ -57,14 +43,9 @@ $stmt = $conn->prepare("
 $stmt->execute([':bid'=>$barangay_id, ':uid'=>$user_id]);
 $rejected = (int)$stmt->fetchColumn();
 
-/* =========================================================
-   PENDING
-========================================================= */
 $pending = max(0, $totalProposals - ($approved + $rejected));
 
-/* =========================================================
-   BUDGET
-========================================================= */
+/* ================= BUDGET ================= */
 $stmt = $conn->prepare("
     SELECT total_amount, remaining_budget
     FROM budgets
@@ -86,46 +67,12 @@ $stmt = $conn->prepare("
 $stmt->execute([':bid'=>$barangay_id]);
 $totalUsedBudget = (float)$stmt->fetchColumn();
 
-/* =========================================================
-   LOAD PURE PYTHON ML RESULT JSON
-========================================================= */
-$ml_online = false;
-$mean_score = 0;
-$category = "No Data";
-$success_probability = 0;
-$budget_efficiency = 0;
-$recommendation = "No recommendation available";
-
-$mlFile = "../ml/ml_results.json";
-
-if (file_exists($mlFile)) {
-
-    $json = file_get_contents($mlFile);
-    $mlData = json_decode($json, true);
-
-    if (json_last_error() === JSON_ERROR_NONE && isset($mlData[$barangay_id])) {
-
-        $barangayML = $mlData[$barangay_id];
-
-        $mean_score = (float)($barangayML['mean_score'] ?? 0);
-        $category = $barangayML['category'] ?? 'No Data';
-        $success_probability = (float)($barangayML['success_probability'] ?? 0);
-        $budget_efficiency = (float)($barangayML['budget_efficiency_score'] ?? 0);
-        $recommendation = $barangayML['recommendation'] ?? 'No recommendation';
-
-        $ml_online = true;
-    }
-}
-
-/* =========================================================
-   PROPOSAL TREND
-========================================================= */
+/* ================= TREND ================= */
 $stmt = $conn->prepare("
     SELECT DATE(created_at) as date, COUNT(*) as total
     FROM projects
     WHERE barangay_id = :bid
     AND created_by = :uid
-    AND status != 'cancelled'
     GROUP BY DATE(created_at)
     ORDER BY date ASC
 ");
@@ -147,75 +94,133 @@ foreach($trend as $t){
 <title>Chairperson Dashboard</title>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<link rel="stylesheet" href="../assets/sbstyle.css">
 <link rel="stylesheet" href="../assets/style.css">
 
 <style>
+*{box-sizing:border-box;}
+
 body{
     margin:0;
+    font-family:Arial;
     background:url('../assets/bg.jpg') no-repeat center center fixed;
     background-size:cover;
-    background-position:center;
-    font-family:Arial;
+    height:100vh;
+    overflow:hidden;
 }
+
+/* MAIN WRAPPER */
+.wrapper{
+    display:flex;
+    height:100vh;
+    overflow:hidden;
+}
+
+/* MAIN CONTENT */
 .main{
-    margin-left:190px;
-    padding:20px;
-    width:calc(100% - 210px);
+    flex:1;
+    display:flex;
+    flex-direction:column;
+    padding:15px;
+    overflow:hidden;
 }
+
+/* TITLE */
 h2{
     color:white;
     text-align:center;
-    margin-bottom:20px;
+    margin:5px 0 10px;
 }
+
+/* GRID TOP */
 .grid{
     display:flex;
     flex-direction:column;
-    gap:15px;
+    gap:10px;
+    flex-shrink:0;
 }
+
+/* ROWS */
 .row{
     display:flex;
-    gap:15px;
+    gap:10px;
+    flex-wrap:wrap;
 }
-.row.top .card{ flex:1; }
-.row.bottom{ justify-content:center; }
-.row.bottom .card{ width:220px; }
 
-.card,.ml-box,.chart-box{
+/* CARDS */
+.card{
     background:rgba(255,255,255,0.18);
     backdrop-filter:blur(18px);
-    border-radius:15px;
-    padding:20px;
+    border-radius:12px;
+    padding:12px;
     color:white;
     text-align:center;
-    box-shadow:0 8px 25px rgba(0,0,0,0.25);
-    margin-bottom:20px;
-}
-.card h2{
-    color:#1e3c72;
-}
-.ml-box,.chart-box{
-    text-align:left;
+    flex:1;
+    min-width:140px;
 }
 
+/* BOTTOM ROW */
+.row.bottom{
+    justify-content:center;
+}
+
+.row.bottom .card{
+    width:200px;
+    flex:none;
+}
+
+/* KPI TEXT */
+.card h2{
+    color:#1e3c72;
+    margin:5px 0 0;
+}
+
+/* ML BOX */
+.ml-box{
+    margin-top:10px;
+    padding:10px;
+    background:rgba(255,255,255,0.15);
+    border-radius:12px;
+    color:white;
+    flex-shrink:0;
+}
+
+/* CHART AREA TAKES REMAINING SPACE */
+.chart-box{
+    flex:1;
+    margin-top:10px;
+    background:rgba(255,255,255,0.15);
+    border-radius:12px;
+    padding:10px;
+    display:flex;
+    flex-direction:column;
+    overflow:hidden;
+}
+
+/* CHART FIX */
+.chart-wrapper{
+    flex:1;
+    position:relative;
+}
+
+canvas{
+    width:100% !important;
+    height:100% !important;
+}
+
+/* RESPONSIVE */
 @media(max-width:768px){
-    .main{
-        margin-left:0;
-        width:100%;
-        padding:10px;
-    }
-    .row{
-        flex-direction:column;
-    }
-    .row.bottom .card{
-        width:100%;
-    }
+    body{overflow:auto;}
+    .wrapper{flex-direction:column;height:auto;}
+    .main{height:auto;overflow:auto;}
+    .row{flex-direction:column;}
+    .row.bottom .card{width:100%;}
 }
 </style>
 </head>
 
 <body>
 
+<div class="wrapper">
 <?php include '../assets/sidebar.php'; ?>
 
 <div class="main">
@@ -241,22 +246,17 @@ h2{
 
 <div class="ml-box">
     <h3>🤖 AI / ML Analysis</h3>
-
-    <?php if($ml_online): ?>
-        <p><b>Category:</b> <?= htmlspecialchars($category) ?></p>
-        <p><b>Success Probability:</b> <?= round($success_probability*100,2) ?>%</p>
-        <p><b>Budget Efficiency:</b> <?= $budget_efficiency ?>%</p>
-        <p><b>Recommendation:</b> <?= htmlspecialchars($recommendation) ?></p>
-    <?php else: ?>
-        <p style="color:#ffb3b3;">ML result file unavailable.</p>
-    <?php endif; ?>
+    <p>System analysis available here.</p>
 </div>
 
 <div class="chart-box">
-    <h3>📊 Proposal Submission Trend</h3>
-    <canvas id="chart"></canvas>
+    <h3 style="color:white;margin:0 0 10px;">📊 Proposal Submission Trend</h3>
+    <div class="chart-wrapper">
+        <canvas id="chart"></canvas>
+    </div>
 </div>
 
+</div>
 </div>
 
 <script>
@@ -273,7 +273,8 @@ new Chart(document.getElementById('chart'), {
         }]
     },
     options:{
-        responsive:true
+        responsive:true,
+        maintainAspectRatio:false
     }
 });
 </script>
