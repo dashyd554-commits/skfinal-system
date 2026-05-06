@@ -100,6 +100,8 @@ body{
     display:flex;
     flex-direction:column;
     overflow:hidden; /* IMPORTANT */
+    background:url('../assets/bg.jpg') no-repeat center center fixed;
+    background-size:cover;
 }
 
 /* TITLE */

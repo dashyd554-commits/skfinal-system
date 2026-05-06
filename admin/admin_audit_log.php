@@ -66,7 +66,8 @@ $logs = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 body{
     font-family:'Segoe UI',sans-serif;
-    background:#0d1b2a;
+    background:url('../assets/bg.jpg') no-repeat center center fixed;
+    background-size:cover;
     color:white;
 }
 
