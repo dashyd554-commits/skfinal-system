@@ -128,12 +128,11 @@ body {
     font-family: 'Sora', 'Segoe UI', sans-serif;
     color: var(--text);
     min-height: 100vh;
-
-    /* background image + overlay (clean + consistent) */
-    background:
-        linear-gradient(rgba(13, 27, 42, 0.75), rgba(13, 27, 42, 0.85)),
-        url('../assets/bg.jpg') no-repeat center center fixed;
-
+    margin:0;
+    overflow:hidden;
+    background:url('../assets/bg.jpg') no-repeat center center fixed;
+    background-size:cover;
+    font-family:Arial;
     background-size: cover;
     overflow-y: auto;
 }
@@ -180,8 +179,8 @@ body {
     gap: 6px;
     border: 1px solid;
 }
-.api-alert.err  { background: rgba(239,68,68,0.09);  border-color: rgba(239,68,68,0.25);  color: #fca5a5; }
-.api-alert.warn { background: rgba(245,158,11,0.09); border-color: rgba(245,158,11,0.25); color: #fcd34d; }
+.api-alert.err  { background: rgba(255,255,255,0.15);  border-color: rgba(255,255,255,0.15);  color: #fca5a5; }
+.api-alert.warn { background: rgba(255,255,255,0.15); border-color: rgba(255,255,255,0.15); color: #fcd34d; }
 .api-alert strong { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.07em; }
 .api-alert code { font-family: 'DM Mono', monospace; font-size: 0.75rem; opacity: 0.7; word-break: break-all; }
 
@@ -227,7 +226,7 @@ body {
     border: 1px solid var(--glass-bdr);
     border-radius: 18px;
     padding: 22px;
-    backdrop-filter: blur(20px);
+    backdrop-filter: blur(18px);
 }
 .panel-title {
     font-size: 0.7rem;

@@ -125,11 +125,11 @@ $voting = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 body{
     margin:0;
-    font-family:Arial;
-    background:url('../assets/bg.jpg') no-repeat center center fixed;
-    background-size:cover;
     height:100vh;
     overflow:hidden;
+    background:url('../assets/bg.jpg') no-repeat center center fixed;
+    background-size:cover;
+    font-family:Arial;
 }
 
 /* ===== LAYOUT FIX ===== */
@@ -171,6 +171,7 @@ body{
 .row.top .glass{
     flex:1;
     min-width:180px;
+    margin-bottom: 20px;
 }
 
 .row.bottom{
@@ -189,6 +190,7 @@ body{
     padding:18px;
     color:#fff;
     box-shadow:0 8px 25px rgba(0,0,0,0.2);
+    margin-bottom: 20px;
 }
 
 /* TABLE FIX */

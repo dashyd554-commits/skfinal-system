@@ -83,9 +83,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 body{
     margin:0;
-    font-family:Arial;
+    height:100vh;
+    overflow:hidden;
     background:url('../assets/bg.jpg') no-repeat center center fixed;
     background-size:cover;
+    font-family:Arial;
 }
 
 /* WRAPPER LIKE OTHER PAGES */
