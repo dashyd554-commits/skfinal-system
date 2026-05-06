@@ -126,13 +126,15 @@ $approvedProjects = (int)$stmt->fetchColumn();
 
 body {
     font-family: 'Sora', 'Segoe UI', sans-serif;
-    background: var(--navy);
     color: var(--text);
     min-height: 100vh;
-    background-image:
-        radial-gradient(ellipse 80% 50% at 20% -10%, rgba(56,189,248,0.13) 0%, transparent 60%),
-        radial-gradient(ellipse 60% 40% at 80% 100%, rgba(245,158,11,0.09) 0%, transparent 55%);
-    background-attachment: fixed;
+
+    /* background image + overlay (clean + consistent) */
+    background:
+        linear-gradient(rgba(13, 27, 42, 0.75), rgba(13, 27, 42, 0.85)),
+        url('../assets/bg.jpg') no-repeat center center fixed;
+
+    background-size: cover;
     overflow-y: auto;
 }
 
