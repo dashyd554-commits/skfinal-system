@@ -492,11 +492,6 @@ $beColor  = $beScore >= 70 ? '#4ade80' : ($beScore >= 40 ? '#fcd34d' : '#f87171'
 
             <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:18px;">
                 <?php
-                $bItems = [
-                    ['💼 Total', $annualBudget, var(--accent)],
-                    ['💸 Used', $usedBudget, '#f87171'],
-                    ['💰 Remaining', $remainingBudget, '#4ade80'],
-                ];
                 $bColors = ['#38bdf8', '#f87171', '#4ade80'];
                 $bLabels = ['💼 Total Annual', '💸 Used', '💰 Remaining'];
                 foreach([$annualBudget, $usedBudget, $remainingBudget] as $i => $amt): ?>
