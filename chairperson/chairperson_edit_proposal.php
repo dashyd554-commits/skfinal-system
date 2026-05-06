@@ -45,10 +45,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 <style>
 body{
-    margin:0;
-    background:url('../assets/bg.jpg') no-repeat center center fixed;
-    background-size:cover;
-    font-family:Arial;
+    font-family: 'Sora', 'Segoe UI', sans-serif;
+    color: var(--text);
+    min-height: 100vh;
+
+    /* background image + overlay (clean + consistent) */
+    background:
+        linear-gradient(rgba(13, 27, 42, 0.75), rgba(13, 27, 42, 0.85)),
+        url('../assets/bg.jpg') no-repeat center center fixed;
+
+    background-size: cover;
+    overflow-y: auto;
 }
 
 /* MAIN */

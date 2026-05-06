@@ -76,11 +76,17 @@ function statusLabel($status) {
 }
 
 body{
-    font-family:Arial;
-    background:url('../assets/bg.jpg') no-repeat center center fixed;
-    background-size:cover;
-    height:100vh;
-    overflow:hidden; /* IMPORTANT FIX */
+    font-family: 'Sora', 'Segoe UI', sans-serif;
+    color: var(--text);
+    min-height: 100vh;
+
+    /* background image + overlay (clean + consistent) */
+    background:
+        linear-gradient(rgba(13, 27, 42, 0.75), rgba(13, 27, 42, 0.85)),
+        url('../assets/bg.jpg') no-repeat center center fixed;
+
+    background-size: cover;
+    overflow-y: auto;
 }
 
 /* ===== LAYOUT FIX ===== */
